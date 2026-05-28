@@ -1,0 +1,265 @@
+# Catwalk starter tag taxonomy.
+#
+# Used by the tier-2 auto-tagger to match filename / folder / 3MF metadata text
+# against a curated vocabulary. Each tag has:
+#   - id:        stable identifier (kebab-case)
+#   - label:     display name
+#   - category:  one of: category, subject, attribute, material, slicer, printer, source
+#   - aliases:   optional list of phrases to match (case-insensitive, fuzzy)
+#   - color:     optional Dracula palette token name
+#
+# Users can override or extend this file; the schema is open.
+
+version: 1
+
+tags:
+  # ── Categories ──────────────────────────────────────────────
+  - id: category-functional
+    label: Functional
+    category: category
+    color: cyan
+    aliases: [functional, tool, jig, fixture, bracket, mount, holder, hook, stand]
+
+  - id: category-decorative
+    label: Decorative
+    category: category
+    color: pink
+    aliases: [decor, decoration, decorative, ornament, art, sculpture]
+
+  - id: category-miniature
+    label: Miniature
+    category: category
+    color: purple
+    aliases: [mini, miniature, figurine, tabletop, "28mm", "32mm", dnd, "d&d", warhammer, "40k"]
+
+  - id: category-cosplay
+    label: Cosplay
+    category: category
+    color: orange
+    aliases: [cosplay, prop, costume, helmet, mask, armor]
+
+  - id: category-toy
+    label: Toy
+    category: category
+    color: yellow
+    aliases: [toy, game, puzzle, fidget]
+
+  - id: category-mechanical
+    label: Mechanical
+    category: category
+    color: cyan
+    aliases: [gear, gears, mechanism, articulated, hinge, joint, bearing, mechanical]
+
+  - id: category-organization
+    label: Organization
+    category: category
+    color: green
+    aliases: [organizer, drawer, gridfinity, multiboard, storage, bin, tray, "tool holder"]
+
+  - id: category-replacement
+    label: Replacement Part
+    category: category
+    color: orange
+    aliases: [replacement, repair, "spare part", oem]
+
+  - id: category-electronics
+    label: Electronics Enclosure
+    category: category
+    color: cyan
+    aliases: [enclosure, "raspberry pi", arduino, esp32, case, project box, pcb]
+
+  # ── Subjects ────────────────────────────────────────────────
+  - id: subject-dragon
+    label: Dragon
+    category: subject
+    aliases: [dragon, wyvern, drake]
+  - id: subject-cat
+    label: Cat
+    category: subject
+    aliases: [cat, kitten, feline]
+  - id: subject-dog
+    label: Dog
+    category: subject
+    aliases: [dog, puppy, canine]
+  - id: subject-vase
+    label: Vase
+    category: subject
+    aliases: [vase, planter, pot]
+  - id: subject-skull
+    label: Skull
+    category: subject
+    aliases: [skull, skeleton]
+  - id: subject-robot
+    label: Robot
+    category: subject
+    aliases: [robot, mech, bot, droid]
+  - id: subject-spaceship
+    label: Spaceship
+    category: subject
+    aliases: [spaceship, starship, "space ship"]
+  - id: subject-vehicle
+    label: Vehicle
+    category: subject
+    aliases: [car, truck, vehicle, tank, motorcycle]
+  - id: subject-keychain
+    label: Keychain
+    category: subject
+    aliases: [keychain, "key chain", keyring, "key ring", fob]
+
+  # ── Attributes ──────────────────────────────────────────────
+  - id: attr-articulated
+    label: Articulated
+    category: attribute
+    aliases: [articulated, "print in place", pip, "print-in-place", flexi]
+  - id: attr-multicolor
+    label: Multicolor
+    category: attribute
+    color: pink
+    aliases: [multicolor, "multi color", multimaterial, "multi material", ams]
+  - id: attr-supports-needed
+    label: Supports
+    category: attribute
+    aliases: [supports, "needs supports", overhang]
+  - id: attr-no-supports
+    label: Supportless
+    category: attribute
+    aliases: [supportless, "no supports", "support free"]
+  - id: attr-large
+    label: Large
+    category: attribute
+    # auto-applied from bbox via tier-1, kept in vocab for manual use
+    aliases: [large, big, oversized]
+  - id: attr-tiny
+    label: Tiny
+    category: attribute
+    aliases: [tiny, small, mini]
+  - id: attr-high-poly
+    label: High Poly
+    category: attribute
+    aliases: ["high poly", detailed, "high detail"]
+  - id: attr-vase-mode
+    label: Vase Mode
+    category: attribute
+    aliases: ["vase mode", "spiral vase", spiralize]
+  - id: attr-remix
+    label: Remix
+    category: attribute
+    aliases: [remix, modified, "modified by"]
+
+  # ── Materials ───────────────────────────────────────────────
+  - id: material-pla
+    label: PLA
+    category: material
+    aliases: [pla, "pla+", "pla plus"]
+  - id: material-petg
+    label: PETG
+    category: material
+    aliases: [petg, "pet-g"]
+  - id: material-abs
+    label: ABS
+    category: material
+    aliases: [abs]
+  - id: material-asa
+    label: ASA
+    category: material
+    aliases: [asa]
+  - id: material-tpu
+    label: TPU
+    category: material
+    aliases: [tpu, flexible, flex]
+  - id: material-nylon
+    label: Nylon
+    category: material
+    aliases: [nylon, pa, "pa-cf", pa12]
+  - id: material-resin
+    label: Resin
+    category: material
+    aliases: [resin, sla, msla, dlp]
+
+  # ── Slicers (auto from 3MF parser) ──────────────────────────
+  - id: slicer-bambu
+    label: Bambu Studio
+    category: slicer
+    aliases: ["bambu studio", bambustudio]
+  - id: slicer-orca
+    label: OrcaSlicer
+    category: slicer
+    aliases: [orcaslicer, "orca slicer", orca]
+  - id: slicer-prusa
+    label: PrusaSlicer
+    category: slicer
+    aliases: [prusaslicer, "prusa slicer", prusa]
+  - id: slicer-cura
+    label: Cura
+    category: slicer
+    aliases: [cura, ultimaker]
+  - id: slicer-superslicer
+    label: SuperSlicer
+    category: slicer
+    aliases: [superslicer]
+
+  # ── Printers (common, expand later) ─────────────────────────
+  - id: printer-bambu-a1
+    label: Bambu A1
+    category: printer
+    aliases: ["bambu a1", "a1 mini"]
+  - id: printer-bambu-p1
+    label: Bambu P1
+    category: printer
+    aliases: ["p1s", "p1p"]
+  - id: printer-bambu-x1
+    label: Bambu X1
+    category: printer
+    aliases: ["x1c", "x1 carbon", "x1e"]
+  - id: printer-bambu-h2d
+    label: Bambu H2D
+    category: printer
+    aliases: ["h2d"]
+  - id: printer-prusa-mk4
+    label: Prusa MK4
+    category: printer
+    aliases: ["mk4", "mk4s"]
+  - id: printer-prusa-xl
+    label: Prusa XL
+    category: printer
+    aliases: ["prusa xl"]
+  - id: printer-prusa-mini
+    label: Prusa Mini
+    category: printer
+    aliases: ["prusa mini", "mini+"]
+  - id: printer-voron
+    label: Voron
+    category: printer
+    aliases: [voron, "v0", "trident", "2.4"]
+
+  # ── Source (auto from URL domain) ───────────────────────────
+  - id: source-makerworld
+    label: MakerWorld
+    category: source
+    aliases: [makerworld, "makerworld.com"]
+  - id: source-printables
+    label: Printables
+    category: source
+    aliases: [printables, "printables.com"]
+  - id: source-thingiverse
+    label: Thingiverse
+    category: source
+    aliases: [thingiverse, "thingiverse.com"]
+  - id: source-cults3d
+    label: Cults3D
+    category: source
+    aliases: [cults, "cults3d", "cults3d.com"]
+  - id: source-thangs
+    label: Thangs
+    category: source
+    aliases: [thangs, "thangs.com"]
+  - id: source-myminifactory
+    label: MyMiniFactory
+    category: source
+    aliases: [myminifactory, "myminifactory.com"]
+
+# Heuristic thresholds used by the tier-1 auto-tagger.
+heuristics:
+  large_min_bbox_mm: 180
+  tiny_max_bbox_mm: 30
+  high_poly_min_triangles: 500000
