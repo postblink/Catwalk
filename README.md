@@ -30,6 +30,11 @@ pnpm install
 pnpm tauri dev
 ```
 
+> On Linux, the `tauri` script sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` and
+> `WEBKIT_DISABLE_COMPOSITING_MODE=1` to work around a WebKitGTK + GBM
+> rendering crash that occurs on many distros. These are no-ops on macOS
+> and Windows.
+
 ## License
 
 [AGPL-3.0-or-later](./LICENSE). If you run a modified version of Catwalk as a network service, you must offer the source to its users.
