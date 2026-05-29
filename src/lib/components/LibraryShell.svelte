@@ -2,10 +2,11 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { Library, Settings, RefreshCw, Box, Loader } from "lucide-svelte";
-  import type { Library as Lib, ModelRow, ScanProgress, ScanResult } from "$lib/types";
+  import { Library, Settings, RefreshCw, Box, Loader, X } from "lucide-svelte";
+  import type { Library as Lib, ModelRow, ScanProgress, ScanResult, TagCount } from "$lib/types";
   import ModelGrid from "./ModelGrid.svelte";
   import DetailPane from "./DetailPane.svelte";
+  import { tagHex } from "./TagChip.svelte";
 
   let { libraries }: { libraries: Lib[] } = $props();
   let activeId = $state<string | null>(null);
@@ -14,6 +15,9 @@
   let models = $state<ModelRow[]>([]);
   let loadingModels = $state(false);
   let selectedId = $state<string | null>(null);
+
+  let tags = $state<TagCount[]>([]);
+  let selectedTagId = $state<string | null>(null);
 
   let scanning = $state(false);
   let progress = $state<ScanProgress | null>(null);
@@ -25,10 +29,33 @@
   async function loadModels(libraryId: string) {
     loadingModels = true;
     try {
-      models = await invoke<ModelRow[]>("list_models", { libraryId });
+      models = await invoke<ModelRow[]>("list_models", {
+        libraryId,
+        tagId: selectedTagId,
+      });
     } finally {
       loadingModels = false;
     }
+  }
+
+  async function loadTags(libraryId: string) {
+    try {
+      tags = await invoke<TagCount[]>("list_tags", { libraryId });
+    } catch {
+      tags = [];
+    }
+  }
+
+  function toggleTag(id: string) {
+    selectedTagId = selectedTagId === id ? null : id;
+    selectedId = null;
+    if (active) loadModels(active.id);
+  }
+
+  // Refresh both the grid and the sidebar counts after a tag edit in the pane.
+  async function onTagsChanged() {
+    if (!active) return;
+    await Promise.all([loadTags(active.id), loadModels(active.id)]);
   }
 
   async function scan() {
@@ -42,15 +69,17 @@
     } finally {
       scanning = false;
       progress = null;
-      await loadModels(active.id);
+      await Promise.all([loadModels(active.id), loadTags(active.id)]);
     }
   }
 
-  // Reload models whenever the active library changes.
+  // Reload models + tags whenever the active library changes.
   $effect(() => {
     if (active) {
       selectedId = null;
+      selectedTagId = null;
       loadModels(active.id);
+      loadTags(active.id);
     }
   });
 
@@ -93,8 +122,32 @@
           <span class="truncate">{lib.name}</span>
         </button>
       {/each}
-      <div class="mt-4 px-2 py-1 text-xs uppercase tracking-wider text-muted">Tags</div>
-      <div class="px-2 py-1 text-sm text-muted">No tags yet</div>
+      <div class="mt-4 flex items-center justify-between px-2 py-1">
+        <span class="text-xs uppercase tracking-wider text-muted">Tags</span>
+        {#if selectedTagId}
+          <button
+            class="flex items-center gap-0.5 text-xs text-muted hover:text-fg"
+            onclick={() => toggleTag(selectedTagId!)}
+            title="Clear filter"
+          >
+            <X size={11} /> Clear
+          </button>
+        {/if}
+      </div>
+      {#if tags.length === 0}
+        <div class="px-2 py-1 text-sm text-muted">No tags yet</div>
+      {:else}
+        {#each tags as tag (tag.id)}
+          <button
+            class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-overlay {selectedTagId === tag.id ? 'bg-surface-overlay text-fg' : 'text-muted'}"
+            onclick={() => toggleTag(tag.id)}
+          >
+            <span class="size-2 shrink-0 rounded-full" style="background-color: {tagHex(tag.color)}"></span>
+            <span class="truncate">{tag.name}</span>
+            <span class="ml-auto shrink-0 text-xs text-muted">{tag.count}</span>
+          </button>
+        {/each}
+      {/if}
     </nav>
     <div class="border-t border-border p-2">
       <button class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted hover:bg-surface-overlay hover:text-fg">
@@ -162,7 +215,7 @@
 
       {#if selectedModel}
         <div class="w-96 shrink-0">
-          <DetailPane model={selectedModel} onClose={() => (selectedId = null)} />
+          <DetailPane model={selectedModel} onClose={() => (selectedId = null)} {onTagsChanged} />
         </div>
       {/if}
     </div>

@@ -43,6 +43,27 @@ export type ModelMetadata = {
   triangle_count: number | null;
 };
 
+export type Tag = {
+  id: string;
+  name: string;
+  color: string | null;
+  category: string | null;
+};
+
+export type TagCount = Tag & {
+  count: number;
+};
+
+export type ModelTag = {
+  tag_id: string;
+  name: string;
+  color: string | null;
+  category: string | null;
+  source: string; // "manual" | "auto-tier1" | "auto-tier2"
+  confidence: number | null;
+  confirmed: number; // 0 | 1
+};
+
 export type ScanProgress = {
   library_id: string;
   phase: "walking" | "indexing" | "pruning" | "done";

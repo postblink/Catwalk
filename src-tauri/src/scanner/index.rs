@@ -3,6 +3,7 @@ use super::hash::hash_file;
 use super::walk::{walk_library, DiscoveredFile};
 use crate::error::{AppError, AppResult};
 use crate::parsers::threemf;
+use crate::tagging;
 use serde::Serialize;
 use sqlx::SqlitePool;
 use std::collections::HashSet;
@@ -211,24 +212,49 @@ async fn upsert_file(
 
     // Extract metadata + a preview thumbnail for formats that carry them. Failures
     // here are non-fatal: the file is still indexed, just without rich metadata.
-    if file.format == ModelFormat::ThreeMf {
-        if let Err(e) = store_threemf_metadata(pool, &model_id, file, &byte_hash, thumb_dir).await {
-            tracing::warn!("3mf metadata failed for {}: {e:?}", file.relative_path);
+    // The parsed 3MF data (if any) also feeds tier-1 auto-tagging below.
+    let threemf_data = if file.format == ModelFormat::ThreeMf {
+        match store_threemf_metadata(pool, &model_id, file, &byte_hash, thumb_dir).await {
+            Ok(data) => Some(data),
+            Err(e) => {
+                tracing::warn!("3mf metadata failed for {}: {e:?}", file.relative_path);
+                None
+            }
         }
+    } else {
+        None
+    };
+
+    // Deterministic auto-tagging. Tier-1 draws on parsed metadata (3MF only);
+    // tier-2 always runs against the filename. Non-fatal on failure.
+    let input = tagging::AutoTagInput {
+        filename: &file.filename,
+        format: threemf_data.as_ref().map(|d| d.format.as_str()),
+        filament_types: threemf_data
+            .as_ref()
+            .map(|d| d.filament_types.as_slice())
+            .unwrap_or(&[]),
+        bbox: threemf_data.as_ref().and_then(|d| d.bbox),
+        triangle_count: threemf_data.as_ref().and_then(|d| d.triangle_count),
+        source_url: None,
+    };
+    if let Err(e) = tagging::apply_auto_tags(pool, &model_id, &input).await {
+        tracing::warn!("auto-tagging failed for {}: {e:?}", file.relative_path);
     }
 
     Ok(outcome)
 }
 
 /// Parse a 3MF, cache its embedded thumbnail (content-addressed by byte hash),
-/// and upsert the parsed metadata row.
+/// and upsert the parsed metadata row. Returns the parsed data so the caller can
+/// reuse it for auto-tagging without re-parsing the archive.
 async fn store_threemf_metadata(
     pool: &SqlitePool,
     model_id: &str,
     file: &DiscoveredFile,
     byte_hash: &str,
     thumb_dir: &Path,
-) -> AppResult<()> {
+) -> AppResult<threemf::ThreeMfData> {
     let data = threemf::parse(&file.absolute_path)?;
 
     // Write the thumbnail to the cache, keyed by file hash so identical files
@@ -294,7 +320,7 @@ async fn store_threemf_metadata(
     .execute(pool)
     .await?;
 
-    Ok(())
+    Ok(data)
 }
 
 /// Delete model rows whose relative_path was not seen during the walk.
@@ -349,6 +375,7 @@ mod tests {
             .await
             .unwrap();
         sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        tagging::seed_vocabulary(&pool).await.unwrap();
 
         let lib_id = Uuid::new_v4().to_string();
         sqlx::query("INSERT INTO libraries (id, name, root_path) VALUES (?, ?, ?)")
