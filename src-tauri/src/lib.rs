@@ -57,6 +57,7 @@ pub fn run() {
             slicers::detect_slicer_libraries,
             models::list_models,
             models::scan_library,
+            models::read_model_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
