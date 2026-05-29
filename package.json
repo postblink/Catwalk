@@ -4,6 +4,7 @@
   "description": "Open-source, cross-platform model organizer for 3D printer models",
   "type": "module",
   "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@11.4.0",
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
