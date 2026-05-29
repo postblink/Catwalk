@@ -87,7 +87,7 @@ const MAX_VIEWER_BYTES: u64 = 256 * 1024 * 1024;
 pub async fn read_model_file(
     state: State<'_, AppState>,
     model_id: String,
-) -> AppResult<Vec<u8>> {
+) -> AppResult<tauri::ipc::Response> {
     let (root, relative_path): (String, String) = {
         let db = state.db.lock().await;
         sqlx::query_as(
@@ -122,7 +122,9 @@ pub async fn read_model_file(
         )));
     }
 
-    Ok(std::fs::read(&target_canon)?)
+    // Return raw bytes (ArrayBuffer on the JS side) rather than a JSON number[],
+    // which would inflate the payload ~4x and cost a parse on a multi-MB mesh.
+    Ok(tauri::ipc::Response::new(std::fs::read(&target_canon)?))
 }
 
 /// Trigger a scan of a library. Progress is streamed to the frontend via the
@@ -157,7 +159,7 @@ pub async fn scan_library(
 pub async fn read_thumbnail(
     state: State<'_, AppState>,
     model_id: String,
-) -> AppResult<Vec<u8>> {
+) -> AppResult<tauri::ipc::Response> {
     let thumb_path: Option<String> = {
         let db = state.db.lock().await;
         sqlx::query_scalar("SELECT thumbnail_path FROM models WHERE id = ?")
@@ -183,5 +185,69 @@ pub async fn read_thumbnail(
         ));
     }
 
-    Ok(std::fs::read(&target_canon)?)
+    Ok(tauri::ipc::Response::new(std::fs::read(&target_canon)?))
+}
+
+/// Persist a thumbnail rendered on the frontend (STL/OBJ meshes have no embedded
+/// preview, so the WebGL viewer renders one offscreen and hands it back here).
+///
+/// The image is cached content-addressed by the model's byte hash so identical
+/// files share one file, mirroring the 3MF thumbnail path.
+#[tauri::command]
+pub async fn save_thumbnail(
+    state: State<'_, AppState>,
+    model_id: String,
+    png: Vec<u8>,
+) -> AppResult<()> {
+    // Reject anything that isn't a PNG before it touches the cache.
+    const PNG_SIG: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    if png.len() < 8 || png[..8] != PNG_SIG {
+        return Err(crate::error::AppError::InvalidInput(
+            "Thumbnail is not a PNG".into(),
+        ));
+    }
+
+    let (exists, byte_hash): (bool, Option<String>) = {
+        let db = state.db.lock().await;
+        let row: Option<Option<String>> =
+            sqlx::query_scalar("SELECT byte_hash FROM models WHERE id = ?")
+                .bind(&model_id)
+                .fetch_optional(&db.pool)
+                .await?;
+        match row {
+            Some(h) => (true, h),
+            None => (false, None),
+        }
+    };
+    if !exists {
+        return Err(crate::error::AppError::NotFound);
+    }
+
+    // Key by byte hash when available; fall back to the model id. Both are
+    // already safe (hex / UUID), but sanitize to hex+dash as defense-in-depth so
+    // a poisoned value can never escape the cache dir via path separators.
+    let raw_key = byte_hash.unwrap_or_else(|| model_id.clone());
+    let key: String = raw_key
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    if key.is_empty() {
+        return Err(crate::error::AppError::InvalidInput(
+            "Unusable thumbnail cache key".into(),
+        ));
+    }
+    let dest = state.thumb_dir.join(format!("{key}.png"));
+    std::fs::write(&dest, &png)?;
+
+    let dest_str = dest.to_string_lossy().into_owned();
+    {
+        let db = state.db.lock().await;
+        sqlx::query("UPDATE models SET thumbnail_path = ? WHERE id = ?")
+            .bind(&dest_str)
+            .bind(&model_id)
+            .execute(&db.pool)
+            .await?;
+    }
+
+    Ok(())
 }
