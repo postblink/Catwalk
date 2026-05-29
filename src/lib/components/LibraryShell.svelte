@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { Library, Settings, RefreshCw, Box, Loader, X, Search, Bookmark, BookmarkPlus, Trash2 } from "lucide-svelte";
+  import { Library, Settings, RefreshCw, Box, Loader, X, Search, Bookmark, BookmarkPlus, Trash2, Tags } from "lucide-svelte";
   import type {
     Library as Lib,
     ModelRow,
@@ -22,7 +22,11 @@
 
   let models = $state<ModelRow[]>([]);
   let loadingModels = $state(false);
-  let selectedId = $state<string | null>(null);
+  // Multi-select: plain click selects one (opens the detail pane); ctrl/cmd and
+  // shift extend the selection (shows the bulk action bar instead).
+  let selectedIds = $state<string[]>([]);
+
+  let bulkTagName = $state("");
 
   let tags = $state<TagCount[]>([]);
   let selectedTagId = $state<string | null>(null);
@@ -92,8 +96,21 @@
 
   function toggleTag(id: string) {
     selectedTagId = selectedTagId === id ? null : id;
-    selectedId = null;
+    selectedIds = [];
     if (active) loadModels(active.id);
+  }
+
+  // Apply a tag (by name, created if new) to every selected model at once.
+  async function bulkAddTag() {
+    const name = bulkTagName.trim();
+    if (!name || selectedIds.length === 0) return;
+    try {
+      await invoke("bulk_add_tag", { modelIds: selectedIds, name });
+      bulkTagName = "";
+      await onTagsChanged();
+    } catch (e) {
+      console.error("bulk tag failed", e);
+    }
   }
 
   async function loadCollections() {
@@ -134,7 +151,7 @@
     }
     searchQuery = parsed.q ?? "";
     selectedTagId = parsed.tagId ?? null;
-    selectedId = null;
+    selectedIds = [];
     if (searchTimer) clearTimeout(searchTimer);
     if (active) loadModels(active.id);
   }
@@ -172,7 +189,7 @@
   // Reload models + tags whenever the active library changes.
   $effect(() => {
     if (active) {
-      selectedId = null;
+      selectedIds = [];
       selectedTagId = null;
       searchQuery = "";
       loadModels(active.id);
@@ -197,7 +214,11 @@
     };
   });
 
-  const selectedModel = $derived(models.find((m) => m.id === selectedId) ?? null);
+  // The detail pane is for single focus; show it only when exactly one is selected.
+  const selectedModel = $derived(
+    selectedIds.length === 1 ? (models.find((m) => m.id === selectedIds[0]) ?? null) : null,
+  );
+  const bulkActive = $derived(selectedIds.length > 1);
 
   const pct = $derived(
     progress && progress.total > 0
@@ -380,6 +401,33 @@
       </div>
     {/if}
 
+    {#if bulkActive}
+      <div class="flex items-center gap-3 border-b border-border bg-surface-raised px-6 py-2">
+        <span class="text-sm font-medium">{selectedIds.length} selected</span>
+        <form class="flex items-center gap-2" onsubmit={(e) => { e.preventDefault(); bulkAddTag(); }}>
+          <input
+            type="text"
+            placeholder="Tag selected…"
+            class="w-48 rounded-md border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-border-strong"
+            bind:value={bulkTagName}
+          />
+          <button
+            type="submit"
+            class="flex items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-sm font-medium text-primary-fg disabled:opacity-50"
+            disabled={!bulkTagName.trim()}
+          >
+            <Tags size={14} /> Apply
+          </button>
+        </form>
+        <button
+          class="ml-auto flex items-center gap-1 text-sm text-muted hover:text-fg"
+          onclick={() => (selectedIds = [])}
+        >
+          <X size={14} /> Clear
+        </button>
+      </div>
+    {/if}
+
     <div class="flex flex-1 overflow-hidden">
       <section class="flex-1 overflow-y-auto p-6">
         {#if loadingModels}
@@ -396,13 +444,13 @@
             {/if}
           </div>
         {:else}
-          <ModelGrid {models} bind:selectedId />
+          <ModelGrid {models} bind:selectedIds />
         {/if}
       </section>
 
       {#if selectedModel}
         <div class="w-96 shrink-0">
-          <DetailPane model={selectedModel} onClose={() => (selectedId = null)} {onTagsChanged} />
+          <DetailPane model={selectedModel} onClose={() => (selectedIds = [])} {onTagsChanged} />
         </div>
       {/if}
     </div>
