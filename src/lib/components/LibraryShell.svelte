@@ -5,6 +5,7 @@
   import { Library, Settings, RefreshCw, Box, Loader } from "lucide-svelte";
   import type { Library as Lib, ModelRow, ScanProgress, ScanResult } from "$lib/types";
   import ModelGrid from "./ModelGrid.svelte";
+  import DetailPane from "./DetailPane.svelte";
 
   let { libraries }: { libraries: Lib[] } = $props();
   let activeId = $state<string | null>(null);
@@ -66,6 +67,8 @@
       unlistenComplete?.();
     };
   });
+
+  const selectedModel = $derived(models.find((m) => m.id === selectedId) ?? null);
 
   const pct = $derived(
     progress && progress.total > 0
@@ -142,18 +145,26 @@
       </div>
     {/if}
 
-    <section class="flex-1 overflow-y-auto p-6">
-      {#if loadingModels}
-        <div class="flex h-full items-center justify-center text-muted">Loading models…</div>
-      {:else if models.length === 0}
-        <div class="flex h-full flex-col items-center justify-center text-muted">
-          <Box size={32} class="mb-3 opacity-50" />
-          <p>No models indexed yet.</p>
-          <p class="text-sm">Hit <span class="text-fg">Scan now</span> to index this library.</p>
+    <div class="flex flex-1 overflow-hidden">
+      <section class="flex-1 overflow-y-auto p-6">
+        {#if loadingModels}
+          <div class="flex h-full items-center justify-center text-muted">Loading models…</div>
+        {:else if models.length === 0}
+          <div class="flex h-full flex-col items-center justify-center text-muted">
+            <Box size={32} class="mb-3 opacity-50" />
+            <p>No models indexed yet.</p>
+            <p class="text-sm">Hit <span class="text-fg">Scan now</span> to index this library.</p>
+          </div>
+        {:else}
+          <ModelGrid {models} bind:selectedId />
+        {/if}
+      </section>
+
+      {#if selectedModel}
+        <div class="w-96 shrink-0">
+          <DetailPane model={selectedModel} onClose={() => (selectedId = null)} />
         </div>
-      {:else}
-        <ModelGrid {models} bind:selectedId />
       {/if}
-    </section>
+    </div>
   </main>
 </div>

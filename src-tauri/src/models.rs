@@ -36,6 +36,56 @@ pub async fn list_models(
     Ok(rows)
 }
 
+/// Maximum file size we'll stream to the frontend viewer (256 MiB).
+const MAX_VIEWER_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Read a model file's raw bytes for the frontend 3D loader.
+///
+/// Resolves `model_id` → `(library root, relative_path)`, joins them, and
+/// canonicalizes the result to ensure it stays within the library root before
+/// reading. This blocks path-traversal via a poisoned `relative_path`.
+#[tauri::command]
+pub async fn read_model_file(
+    state: State<'_, AppState>,
+    model_id: String,
+) -> AppResult<Vec<u8>> {
+    let (root, relative_path): (String, String) = {
+        let db = state.db.lock().await;
+        sqlx::query_as(
+            "SELECT l.root_path, m.relative_path FROM models m \
+             JOIN libraries l ON l.id = m.library_id WHERE m.id = ?",
+        )
+        .bind(&model_id)
+        .fetch_optional(&db.pool)
+        .await?
+        .ok_or(crate::error::AppError::NotFound)?
+    };
+
+    let root_canon = std::path::Path::new(&root)
+        .canonicalize()
+        .map_err(|_| crate::error::AppError::NotFound)?;
+    let target = root_canon.join(&relative_path);
+    let target_canon = target
+        .canonicalize()
+        .map_err(|_| crate::error::AppError::NotFound)?;
+
+    if !target_canon.starts_with(&root_canon) {
+        return Err(crate::error::AppError::InvalidInput(
+            "Resolved path escapes the library root".into(),
+        ));
+    }
+
+    let meta = std::fs::metadata(&target_canon)?;
+    if meta.len() > MAX_VIEWER_BYTES {
+        return Err(crate::error::AppError::InvalidInput(format!(
+            "File too large to preview ({} MiB)",
+            meta.len() / (1024 * 1024)
+        )));
+    }
+
+    Ok(std::fs::read(&target_canon)?)
+}
+
 /// Trigger a scan of a library. Progress is streamed to the frontend via the
 /// `scan:progress` event; the final `ScanResult` is returned directly.
 #[tauri::command]
