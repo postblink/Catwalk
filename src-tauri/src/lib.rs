@@ -66,6 +66,7 @@ pub fn run() {
             models::scan_library,
             models::read_model_file,
             models::read_thumbnail,
+            models::save_thumbnail,
             models::get_model_metadata,
         ])
         .run(tauri::generate_context!())
