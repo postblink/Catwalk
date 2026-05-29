@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { Library, Settings, RefreshCw, Box, Loader, X } from "lucide-svelte";
+  import { Library, Settings, RefreshCw, Box, Loader, X, Search } from "lucide-svelte";
   import type { Library as Lib, ModelRow, ScanProgress, ScanResult, TagCount } from "$lib/types";
   import ModelGrid from "./ModelGrid.svelte";
   import DetailPane from "./DetailPane.svelte";
@@ -19,6 +19,9 @@
   let tags = $state<TagCount[]>([]);
   let selectedTagId = $state<string | null>(null);
 
+  let searchQuery = $state("");
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
   let scanning = $state(false);
   let progress = $state<ScanProgress | null>(null);
   let lastResult = $state<ScanResult | null>(null);
@@ -26,17 +29,43 @@
   let unlistenProgress: UnlistenFn | null = null;
   let unlistenComplete: UnlistenFn | null = null;
 
+  // Monotonic token so an out-of-order response (slow query that resolves after
+  // a newer search or library switch) can't clobber fresher results.
+  let loadSeq = 0;
+
   async function loadModels(libraryId: string) {
+    const seq = ++loadSeq;
     loadingModels = true;
     try {
-      models = await invoke<ModelRow[]>("list_models", {
+      const rows = await invoke<ModelRow[]>("list_models", {
         libraryId,
         tagId: selectedTagId,
+        query: searchQuery.trim() || null,
       });
+      if (seq !== loadSeq) return; // a newer load superseded this one
+      models = rows;
     } finally {
-      loadingModels = false;
+      if (seq === loadSeq) loadingModels = false;
     }
   }
+
+  // Debounce search input so we don't query the DB on every keystroke.
+  function onSearchInput() {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      if (active) loadModels(active.id);
+    }, 200);
+  }
+
+  function clearSearch() {
+    searchQuery = "";
+    if (searchTimer) clearTimeout(searchTimer);
+    if (active) loadModels(active.id);
+  }
+
+  // True when the grid is narrowed by a search or tag, so an empty result can
+  // explain itself rather than implying the library is unindexed.
+  const filtersActive = $derived(searchQuery.trim().length > 0 || selectedTagId !== null);
 
   async function loadTags(libraryId: string) {
     try {
@@ -78,6 +107,7 @@
     if (active) {
       selectedId = null;
       selectedTagId = null;
+      searchQuery = "";
       loadModels(active.id);
       loadTags(active.id);
     }
@@ -94,6 +124,7 @@
     return () => {
       unlistenProgress?.();
       unlistenComplete?.();
+      if (searchTimer) clearTimeout(searchTimer);
     };
   });
 
@@ -158,11 +189,32 @@
 
   <main class="flex flex-1 flex-col">
     <header class="app-chrome flex items-center justify-between border-b border-border px-6 py-3">
-      <div>
+      <div class="shrink-0">
         <div class="text-sm text-muted">Library</div>
         <h1 class="text-lg font-semibold">{active?.name ?? "—"}</h1>
       </div>
-      <div class="flex items-center gap-4">
+
+      <div class="relative mx-6 max-w-md flex-1">
+        <Search size={14} class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+        <input
+          type="text"
+          placeholder="Search models…"
+          class="w-full rounded-md border border-border bg-surface py-1.5 pl-8 pr-8 text-sm outline-none focus:border-border-strong"
+          bind:value={searchQuery}
+          oninput={onSearchInput}
+        />
+        {#if searchQuery}
+          <button
+            class="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted hover:text-fg"
+            onclick={clearSearch}
+            title="Clear search"
+          >
+            <X size={14} />
+          </button>
+        {/if}
+      </div>
+
+      <div class="flex shrink-0 items-center gap-4">
         <div class="text-right">
           <div class="text-xs text-muted">{active?.root_path}</div>
           <div class="text-xs text-muted">
@@ -205,8 +257,13 @@
         {:else if models.length === 0}
           <div class="flex h-full flex-col items-center justify-center text-muted">
             <Box size={32} class="mb-3 opacity-50" />
-            <p>No models indexed yet.</p>
-            <p class="text-sm">Hit <span class="text-fg">Scan now</span> to index this library.</p>
+            {#if filtersActive}
+              <p>No models match your search or filter.</p>
+              <p class="text-sm">Try a different term or <button class="text-fg underline-offset-2 hover:underline" onclick={clearSearch}>clear the search</button>.</p>
+            {:else}
+              <p>No models indexed yet.</p>
+              <p class="text-sm">Hit <span class="text-fg">Scan now</span> to index this library.</p>
+            {/if}
           </div>
         {:else}
           <ModelGrid {models} bind:selectedId />

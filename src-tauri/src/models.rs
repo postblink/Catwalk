@@ -57,17 +57,29 @@ pub async fn get_model_metadata(
     Ok(row)
 }
 
-/// List models in a library, optionally filtered to those carrying a given tag,
-/// ordered by filename.
+/// List models in a library, optionally filtered by a tag and/or a free-text
+/// query (case-insensitive substring of the filename or relative path), ordered
+/// by filename.
 #[tauri::command]
 pub async fn list_models(
     state: State<'_, AppState>,
     library_id: String,
     tag_id: Option<String>,
+    query: Option<String>,
 ) -> AppResult<Vec<ModelRow>> {
     let db = state.db.lock().await;
-    // When a tag filter is set, join through model_tags; the `?2 IS NULL` guard
-    // keeps the unfiltered path on the same prepared statement.
+    // Turn a non-empty query into a LIKE pattern, escaping the LIKE wildcards so a
+    // literal `%` or `_` in the search text matches itself.
+    let like = query.as_deref().map(str::trim).filter(|q| !q.is_empty()).map(|q| {
+        let escaped = q
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        format!("%{escaped}%")
+    });
+
+    // The `IS NULL` guards keep the filtered and unfiltered paths on one prepared
+    // statement. LIKE is case-insensitive for ASCII in SQLite by default.
     let rows = sqlx::query_as::<_, ModelRow>(
         "SELECT m.id, m.library_id, m.relative_path, m.filename, m.extension, \
          m.size_bytes, m.byte_hash, m.thumbnail_path, m.modified_at, m.indexed_at \
@@ -76,10 +88,13 @@ pub async fn list_models(
          AND (?2 IS NULL OR EXISTS ( \
              SELECT 1 FROM model_tags mt WHERE mt.model_id = m.id AND mt.tag_id = ?2 \
          )) \
+         AND (?3 IS NULL OR m.filename LIKE ?3 ESCAPE '\\' \
+              OR m.relative_path LIKE ?3 ESCAPE '\\') \
          ORDER BY m.filename COLLATE NOCASE ASC",
     )
     .bind(&library_id)
     .bind(&tag_id)
+    .bind(&like)
     .fetch_all(&db.pool)
     .await?;
     Ok(rows)
