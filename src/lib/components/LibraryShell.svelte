@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { Library, Settings, RefreshCw, Box, Loader, X, Search, Bookmark, BookmarkPlus, Trash2, Tags } from "lucide-svelte";
@@ -186,15 +186,20 @@
     }
   }
 
-  // Reload models + tags whenever the active library changes.
+  // Reload models + tags whenever the active library changes. Only `active` is
+  // tracked: the body is untracked so the reads inside loadModels/loadTags
+  // (searchQuery, selectedTagId) don't make this effect re-run on every
+  // keystroke — which would wipe the search box mid-type.
   $effect(() => {
-    if (active) {
+    const lib = active;
+    if (!lib) return;
+    untrack(() => {
       selectedIds = [];
       selectedTagId = null;
       searchQuery = "";
-      loadModels(active.id);
-      loadTags(active.id);
-    }
+      loadModels(lib.id);
+      loadTags(lib.id);
+    });
   });
 
   onMount(() => {
