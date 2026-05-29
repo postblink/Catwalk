@@ -1,6 +1,8 @@
 mod db;
 mod error;
 mod libraries;
+mod models;
+mod scanner;
 mod slicers;
 
 use std::sync::Arc;
@@ -53,6 +55,8 @@ pub fn run() {
             libraries::create_library,
             libraries::create_library_dir,
             slicers::detect_slicer_libraries,
+            models::list_models,
+            models::scan_library,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
