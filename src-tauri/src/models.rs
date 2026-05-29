@@ -57,19 +57,29 @@ pub async fn get_model_metadata(
     Ok(row)
 }
 
-/// List models in a library, newest-indexed first.
+/// List models in a library, optionally filtered to those carrying a given tag,
+/// ordered by filename.
 #[tauri::command]
 pub async fn list_models(
     state: State<'_, AppState>,
     library_id: String,
+    tag_id: Option<String>,
 ) -> AppResult<Vec<ModelRow>> {
     let db = state.db.lock().await;
+    // When a tag filter is set, join through model_tags; the `?2 IS NULL` guard
+    // keeps the unfiltered path on the same prepared statement.
     let rows = sqlx::query_as::<_, ModelRow>(
-        "SELECT id, library_id, relative_path, filename, extension, size_bytes, \
-         byte_hash, thumbnail_path, modified_at, indexed_at \
-         FROM models WHERE library_id = ? ORDER BY filename COLLATE NOCASE ASC",
+        "SELECT m.id, m.library_id, m.relative_path, m.filename, m.extension, \
+         m.size_bytes, m.byte_hash, m.thumbnail_path, m.modified_at, m.indexed_at \
+         FROM models m \
+         WHERE m.library_id = ?1 \
+         AND (?2 IS NULL OR EXISTS ( \
+             SELECT 1 FROM model_tags mt WHERE mt.model_id = m.id AND mt.tag_id = ?2 \
+         )) \
+         ORDER BY m.filename COLLATE NOCASE ASC",
     )
     .bind(&library_id)
+    .bind(&tag_id)
     .fetch_all(&db.pool)
     .await?;
     Ok(rows)

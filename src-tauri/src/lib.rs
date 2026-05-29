@@ -5,6 +5,9 @@ mod models;
 mod parsers;
 mod scanner;
 mod slicers;
+mod tagging;
+mod tags;
+mod vocab;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -44,6 +47,11 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 match db::Db::open(&db_path).await {
                     Ok(db) => {
+                        // Seed the curated tag vocabulary so well-known tag ids
+                        // exist for auto-tagging FK integrity and display.
+                        if let Err(e) = tagging::seed_vocabulary(&db.pool).await {
+                            tracing::error!("failed to seed tag vocabulary: {e:?}");
+                        }
                         handle.manage(AppState {
                             db: Arc::new(Mutex::new(db)),
                             thumb_dir,
@@ -68,6 +76,12 @@ pub fn run() {
             models::read_thumbnail,
             models::save_thumbnail,
             models::get_model_metadata,
+            tags::list_tags,
+            tags::list_model_tags,
+            tags::add_model_tag,
+            tags::create_and_add_tag,
+            tags::confirm_model_tag,
+            tags::remove_model_tag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
