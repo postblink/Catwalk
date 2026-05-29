@@ -1,3 +1,7 @@
-allowBuilds:
-  esbuild: set this to true or false
-  sharp: set this to true or false
+# pnpm 10+ blocks dependency build scripts by default and (in v11) errors on
+# ignored builds. esbuild (pulled in by Vite) ships its native binary via an
+# optional dependency, so allow it explicitly and downgrade the strict gate to a
+# warning — otherwise `pnpm install` fails with ERR_PNPM_IGNORED_BUILDS in CI.
+strictDepBuilds: false
+onlyBuiltDependencies:
+  - esbuild
