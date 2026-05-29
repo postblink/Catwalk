@@ -81,6 +81,7 @@ pub fn run() {
             tags::list_model_tags,
             tags::add_model_tag,
             tags::create_and_add_tag,
+            tags::bulk_add_tag,
             tags::confirm_model_tag,
             tags::remove_model_tag,
             collections::list_collections,

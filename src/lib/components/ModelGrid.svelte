@@ -5,18 +5,50 @@
 
   let {
     models,
-    selectedId = $bindable(null),
+    selectedIds = $bindable([]),
   }: {
     models: ModelRow[];
-    selectedId?: string | null;
+    selectedIds?: string[];
   } = $props();
+
+  // Anchor for shift-range selection, stored by id so it survives reordering of
+  // the models list (search/filter/library switch) — a numeric index would go
+  // stale and select the wrong range.
+  let anchorId: string | null = null;
+
+  function selectOne(index: number) {
+    const id = models[index].id;
+    selectedIds = [id];
+    anchorId = id;
+  }
+
+  function onCardClick(e: MouseEvent, index: number) {
+    const id = models[index].id;
+    const anchorIndex = anchorId === null ? -1 : models.findIndex((m) => m.id === anchorId);
+    if (e.shiftKey && anchorIndex !== -1) {
+      // Range from the anchor to here, merged into the current selection.
+      const [a, b] = anchorIndex <= index ? [anchorIndex, index] : [index, anchorIndex];
+      const set = new Set(selectedIds);
+      for (const m of models.slice(a, b + 1)) set.add(m.id);
+      selectedIds = [...set];
+    } else if (e.ctrlKey || e.metaKey) {
+      // Toggle this card's membership without disturbing the rest.
+      const set = new Set(selectedIds);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      selectedIds = [...set];
+      anchorId = id;
+    } else {
+      selectOne(index);
+    }
+  }
 </script>
 
 <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
-  {#each models as model (model.id)}
+  {#each models as model, index (model.id)}
     <button
-      class="group flex flex-col overflow-hidden rounded-lg border bg-surface-raised text-left transition-colors hover:border-primary {selectedId === model.id ? 'border-primary' : 'border-border'}"
-      onclick={() => (selectedId = model.id)}
+      class="group flex flex-col overflow-hidden rounded-lg border bg-surface-raised text-left transition-colors hover:border-primary {selectedIds.includes(model.id) ? 'border-primary' : 'border-border'}"
+      onclick={(e) => onCardClick(e, index)}
     >
       <div class="flex aspect-square items-center justify-center bg-surface">
         <ModelThumb {model} />

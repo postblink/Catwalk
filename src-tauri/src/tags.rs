@@ -150,6 +150,68 @@ pub async fn create_and_add_tag(
     Ok(tag)
 }
 
+/// Attach a tag (by free-text name, created if new) to many models at once as
+/// confirmed manual assignments. Resolves/creates the tag and inserts every
+/// assignment inside one transaction so a partial failure leaves no half-tagged
+/// selection. Returns the resolved tag.
+#[tauri::command]
+pub async fn bulk_add_tag(
+    state: State<'_, AppState>,
+    model_ids: Vec<String>,
+    name: String,
+) -> AppResult<Tag> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::InvalidInput("Tag name is required".into()));
+    }
+    if model_ids.is_empty() {
+        return Err(AppError::InvalidInput("No models selected".into()));
+    }
+
+    let db = state.db.lock().await;
+    let mut tx = db.pool.begin().await?;
+
+    // Reuse an existing tag with the same name (case-insensitive), else create.
+    let existing = sqlx::query_as::<_, Tag>(
+        "SELECT id, name, color, category FROM tags WHERE name = ? COLLATE NOCASE",
+    )
+    .bind(trimmed)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let tag = if let Some(tag) = existing {
+        tag
+    } else {
+        let id = Uuid::new_v4().to_string();
+        sqlx::query("INSERT INTO tags (id, name) VALUES (?, ?)")
+            .bind(&id)
+            .bind(trimmed)
+            .execute(&mut *tx)
+            .await?;
+        Tag {
+            id,
+            name: trimmed.to_string(),
+            color: None,
+            category: None,
+        }
+    };
+
+    for model_id in &model_ids {
+        sqlx::query(
+            "INSERT INTO model_tags (model_id, tag_id, source, confirmed) \
+             VALUES (?, ?, 'manual', 1) \
+             ON CONFLICT(model_id, tag_id) DO UPDATE SET source = 'manual', confirmed = 1",
+        )
+        .bind(model_id)
+        .bind(&tag.id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(tag)
+}
+
 /// Confirm an auto-suggested tag (keeps its provenance, flips `confirmed`).
 #[tauri::command]
 pub async fn confirm_model_tag(
