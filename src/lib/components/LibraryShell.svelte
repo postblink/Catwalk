@@ -2,8 +2,16 @@
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { Library, Settings, RefreshCw, Box, Loader, X, Search } from "lucide-svelte";
-  import type { Library as Lib, ModelRow, ScanProgress, ScanResult, TagCount } from "$lib/types";
+  import { Library, Settings, RefreshCw, Box, Loader, X, Search, Bookmark, BookmarkPlus, Trash2 } from "lucide-svelte";
+  import type {
+    Library as Lib,
+    ModelRow,
+    ScanProgress,
+    ScanResult,
+    TagCount,
+    SmartCollection,
+    SavedSearch,
+  } from "$lib/types";
   import ModelGrid from "./ModelGrid.svelte";
   import DetailPane from "./DetailPane.svelte";
   import { tagHex } from "./TagChip.svelte";
@@ -21,6 +29,10 @@
 
   let searchQuery = $state("");
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  let collections = $state<SmartCollection[]>([]);
+  let savingCollection = $state(false);
+  let newCollectionName = $state("");
 
   let scanning = $state(false);
   let progress = $state<ScanProgress | null>(null);
@@ -44,6 +56,9 @@
       });
       if (seq !== loadSeq) return; // a newer load superseded this one
       models = rows;
+    } catch (e) {
+      console.error("failed to load models", e);
+      if (seq === loadSeq) models = [];
     } finally {
       if (seq === loadSeq) loadingModels = false;
     }
@@ -81,6 +96,58 @@
     if (active) loadModels(active.id);
   }
 
+  async function loadCollections() {
+    try {
+      collections = await invoke<SmartCollection[]>("list_collections");
+    } catch {
+      collections = [];
+    }
+  }
+
+  // Persist the current search (text + tag) as a named, reusable preset.
+  async function saveCollection() {
+    const name = newCollectionName.trim();
+    if (!name) return;
+    const payload: SavedSearch = { q: searchQuery.trim(), tagId: selectedTagId };
+    try {
+      const created = await invoke<SmartCollection>("create_collection", {
+        name,
+        query: JSON.stringify(payload),
+        icon: null,
+      });
+      collections = [created, ...collections];
+      newCollectionName = "";
+      savingCollection = false;
+    } catch (e) {
+      console.error("save collection failed", e);
+    }
+  }
+
+  // Apply a saved preset: restore its text + tag, then reload the grid. A
+  // malformed payload (e.g. from an older schema) falls back to no-op filters.
+  function applyCollection(c: SmartCollection) {
+    let parsed: SavedSearch = { q: "", tagId: null };
+    try {
+      parsed = { ...parsed, ...(JSON.parse(c.query) as Partial<SavedSearch>) };
+    } catch {
+      // leave defaults
+    }
+    searchQuery = parsed.q ?? "";
+    selectedTagId = parsed.tagId ?? null;
+    selectedId = null;
+    if (searchTimer) clearTimeout(searchTimer);
+    if (active) loadModels(active.id);
+  }
+
+  async function deleteCollection(id: string) {
+    try {
+      await invoke("delete_collection", { id });
+      collections = collections.filter((c) => c.id !== id);
+    } catch (e) {
+      console.error("delete collection failed", e);
+    }
+  }
+
   // Refresh both the grid and the sidebar counts after a tag edit in the pane.
   async function onTagsChanged() {
     if (!active) return;
@@ -114,6 +181,8 @@
   });
 
   onMount(() => {
+    loadCollections();
+
     listen<ScanProgress>("scan:progress", (e) => {
       progress = e.payload;
     }).then((fn) => (unlistenProgress = fn));
@@ -177,6 +246,67 @@
             <span class="truncate">{tag.name}</span>
             <span class="ml-auto shrink-0 text-xs text-muted">{tag.count}</span>
           </button>
+        {/each}
+      {/if}
+
+      <div class="mt-4 flex items-center justify-between px-2 py-1">
+        <span class="text-xs uppercase tracking-wider text-muted">Collections</span>
+        {#if filtersActive && !savingCollection}
+          <button
+            class="flex items-center gap-0.5 text-xs text-muted hover:text-fg"
+            onclick={() => (savingCollection = true)}
+            title="Save current search"
+          >
+            <BookmarkPlus size={12} /> Save
+          </button>
+        {/if}
+      </div>
+      {#if savingCollection}
+        <form class="px-2 py-1" onsubmit={(e) => { e.preventDefault(); saveCollection(); }}>
+          <input
+            type="text"
+            placeholder="Collection name…"
+            class="w-full rounded-md border border-border bg-surface px-2 py-1 text-sm outline-none focus:border-border-strong"
+            bind:value={newCollectionName}
+            onkeydown={(e) => { if (e.key === "Escape") { savingCollection = false; newCollectionName = ""; } }}
+          />
+          <div class="mt-1 flex gap-1">
+            <button
+              type="submit"
+              class="flex-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-primary-fg disabled:opacity-50"
+              disabled={!newCollectionName.trim()}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              class="rounded-md px-2 py-1 text-xs text-muted hover:text-fg"
+              onclick={() => { savingCollection = false; newCollectionName = ""; }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      {/if}
+      {#if collections.length === 0}
+        {#if !savingCollection}
+          <div class="px-2 py-1 text-sm text-muted">No saved searches</div>
+        {/if}
+      {:else}
+        {#each collections as col (col.id)}
+          <div class="group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted hover:bg-surface-overlay">
+            <button class="flex min-w-0 flex-1 items-center gap-2 text-left" onclick={() => applyCollection(col)}>
+              <Bookmark size={14} class="shrink-0" />
+              <span class="truncate">{col.name}</span>
+            </button>
+            <button
+              class="shrink-0 rounded p-0.5 text-muted opacity-0 hover:text-fg group-hover:opacity-100"
+              onclick={() => deleteCollection(col.id)}
+              title="Delete collection"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
         {/each}
       {/if}
     </nav>
