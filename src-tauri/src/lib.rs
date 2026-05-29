@@ -2,15 +2,19 @@ mod db;
 mod error;
 mod libraries;
 mod models;
+mod parsers;
 mod scanner;
 mod slicers;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
 
 pub struct AppState {
     pub db: Arc<Mutex<db::Db>>,
+    /// Content-addressed cache for extracted/rendered thumbnails.
+    pub thumb_dir: PathBuf,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -33,6 +37,8 @@ pub fn run() {
                 .expect("app data dir resolvable");
             std::fs::create_dir_all(&app_data_dir).ok();
             let db_path = app_data_dir.join("catwalk.db");
+            let thumb_dir = app_data_dir.join("thumbnails");
+            std::fs::create_dir_all(&thumb_dir).ok();
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -40,6 +46,7 @@ pub fn run() {
                     Ok(db) => {
                         handle.manage(AppState {
                             db: Arc::new(Mutex::new(db)),
+                            thumb_dir,
                         });
                         tracing::info!("database ready at {:?}", db_path);
                     }
@@ -58,6 +65,8 @@ pub fn run() {
             models::list_models,
             models::scan_library,
             models::read_model_file,
+            models::read_thumbnail,
+            models::get_model_metadata,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

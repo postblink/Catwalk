@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { Box } from "lucide-svelte";
   import type { ModelRow } from "$lib/types";
   import { formatBytes, extColor } from "$lib/format";
+  import ModelThumb from "./ModelThumb.svelte";
 
   let {
     models,
@@ -19,12 +19,7 @@
       onclick={() => (selectedId = model.id)}
     >
       <div class="flex aspect-square items-center justify-center bg-surface">
-        {#if model.thumbnail_path}
-          <!-- thumbnail pipeline lands next; placeholder for now -->
-          <img src={model.thumbnail_path} alt={model.filename} class="h-full w-full object-contain" />
-        {:else}
-          <Box size={40} class="text-muted opacity-40 transition-opacity group-hover:opacity-70" />
-        {/if}
+        <ModelThumb {model} />
       </div>
       <div class="flex flex-col gap-1 p-2.5">
         <div class="truncate text-sm font-medium" title={model.filename}>{model.filename}</div>

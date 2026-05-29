@@ -25,6 +25,24 @@ export type ModelRow = {
   indexed_at: string;
 };
 
+export type ModelMetadata = {
+  model_id: string;
+  format: string;
+  plate_count: number | null;
+  print_time_seconds: number | null;
+  filament_grams: number | null;
+  filament_types: string | null; // JSON array string
+  nozzle_diameter: number | null;
+  layer_height: number | null;
+  bbox_min_x: number | null;
+  bbox_min_y: number | null;
+  bbox_min_z: number | null;
+  bbox_max_x: number | null;
+  bbox_max_y: number | null;
+  bbox_max_z: number | null;
+  triangle_count: number | null;
+};
+
 export type ScanProgress = {
   library_id: string;
   phase: "walking" | "indexing" | "pruning" | "done";
