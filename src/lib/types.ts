@@ -64,6 +64,20 @@ export type ModelTag = {
   confirmed: number; // 0 | 1
 };
 
+export type SmartCollection = {
+  id: string;
+  name: string;
+  query: string; // JSON-encoded SavedSearch
+  icon: string | null;
+  created_at: string;
+};
+
+// The shape encoded into SmartCollection.query.
+export type SavedSearch = {
+  q: string;
+  tagId: string | null;
+};
+
 export type ScanProgress = {
   library_id: string;
   phase: "walking" | "indexing" | "pruning" | "done";

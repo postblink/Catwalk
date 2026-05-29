@@ -1,3 +1,4 @@
+mod collections;
 mod db;
 mod error;
 mod libraries;
@@ -82,6 +83,9 @@ pub fn run() {
             tags::create_and_add_tag,
             tags::confirm_model_tag,
             tags::remove_model_tag,
+            collections::list_collections,
+            collections::create_collection,
+            collections::delete_collection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
