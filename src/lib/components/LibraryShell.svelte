@@ -15,6 +15,10 @@
   import ModelGrid from "./ModelGrid.svelte";
   import DetailPane from "./DetailPane.svelte";
   import { tagHex } from "./TagChip.svelte";
+  import { prefetchPreview } from "$lib/three/previewLoader";
+
+  // Formats the interactive viewer can parse — mirrors DetailPane's gate.
+  const PREVIEWABLE = new Set(["stl", "obj", "3mf"]);
 
   let { libraries }: { libraries: Lib[] } = $props();
   let activeId = $state<string | null>(null);
@@ -224,6 +228,15 @@
     selectedIds.length === 1 ? (models.find((m) => m.id === selectedIds[0]) ?? null) : null,
   );
   const bulkActive = $derived(selectedIds.length > 1);
+
+  // Warm the preview cache the moment a single model is selected, so the parse
+  // overlaps the detail-pane metadata fetch and the viewer paints instantly.
+  $effect(() => {
+    const m = selectedModel;
+    if (m && PREVIEWABLE.has(m.extension.toLowerCase())) {
+      prefetchPreview(m.id, m.extension);
+    }
+  });
 
   const pct = $derived(
     progress && progress.total > 0
