@@ -1,25 +1,33 @@
 # Catwalk
 
-An open-source, cross-platform model organizer for 3D printer files. Built with Tauri 2, SvelteKit, Svelte 5, Threlte, and Rust.
+An open-source, cross-platform organizer for 3D-printing model files. Point it at the folders you already have, and it gives you a fast, searchable, taggable library with a real 3D viewer — without touching a single file.
 
-> **Status:** Early development. Foundations only — library scan, viewer, and tagging are next.
+Built with Tauri 2, SvelteKit, Svelte 5, Threlte, and Rust.
 
-## Goals
+> **Status:** Preview. The core workflow — scan, browse, preview, tag, search — works end to end, and there are unsigned preview builds on the [releases page](../../releases). Expect rough edges and the occasional breaking change on the way to 1.0.
 
-- **Beautiful viewer.** First-class 3D inspection of STL, OBJ, and 3MF files with orbit, pan, zoom, wireframe, and measure tools.
-- **Smart organization.** Manual tags plus auto-tags inferred from slicer metadata, filenames, and (later) image embeddings.
-- **Non-destructive.** Catwalk indexes your existing folders. It never moves or modifies your files.
-- **Cross-platform.** macOS, Linux, Windows. No Electron.
+## Why
 
-## Supported formats (v1)
+Model files pile up — across drives, downloads, and slicer exports — and there's no good way to see what's actually in them. Catwalk reads your existing folders in place, renders every model, and lets you tag and filter until the pile is findable. It never reorganizes anything behind your back.
 
-| Format | Read | Metadata | Thumbnail |
-| --- | --- | --- | --- |
-| STL  | yes | — | rendered |
-| OBJ  | yes | — | rendered |
-| 3MF  | yes | Bambu / Orca / Prusa / Cura | embedded preferred |
-| G-code | preview only | embedded settings | embedded preferred |
-| STEP / STP | deferred | — | — |
+## What it does
+
+- **Real 3D viewer.** STL, OBJ, and 3MF render in an interactive viewer — orbit, pan, zoom, a wireframe toggle, and a fullscreen popout. 3MF multicolor (painted faces, color groups, base materials) shows up the way your slicer painted it.
+- **Fast by default.** Parsing runs off the main thread in a Web Worker, decoded geometry is cached to disk, and the whole library warms in the background after a scan — so models open instantly, not just the ones you've already clicked.
+- **Smart organization.** Manual tags plus auto-tags inferred from slicer metadata and filenames. Search and tag-filter the grid, save those filters as smart collections, and bulk-tag with multi-select.
+- **Slicer-aware.** 3MF projects from Bambu Studio, OrcaSlicer, PrusaSlicer, and Cura contribute their embedded preview, print time, layer height, and nozzle settings.
+- **Non-destructive.** Catwalk indexes your folders. It never moves, renames, or modifies your files.
+- **Cross-platform.** macOS, Linux, and Windows. No Electron.
+
+## Formats
+
+| Format | Indexed | Metadata | Thumbnail | 3D preview |
+| --- | --- | --- | --- | --- |
+| STL | yes | — | rendered | yes |
+| OBJ | yes | — | rendered | yes |
+| 3MF | yes | Bambu / Orca / Prusa / Cura | embedded | yes (multicolor) |
+| G-code | yes | planned | planned | planned |
+| STEP / STP | planned | — | — | planned |
 
 ## Development
 
@@ -30,11 +38,18 @@ pnpm install
 pnpm tauri dev
 ```
 
+Common scripts:
+
+```sh
+pnpm test        # run the Vitest suite
+pnpm build       # build the SvelteKit front end
+pnpm tauri build # build a desktop bundle for your platform
+```
+
 > On Linux, the `tauri` script sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` and
 > `WEBKIT_DISABLE_COMPOSITING_MODE=1` to work around a WebKitGTK + GBM
-> rendering crash that occurs on many distros. These are no-ops on macOS
-> and Windows.
+> rendering crash seen on many distros. These are no-ops on macOS and Windows.
 
 ## License
 
-[AGPL-3.0-or-later](./LICENSE). If you run a modified version of Catwalk as a network service, you must offer the source to its users.
+[AGPL-3.0-or-later](./LICENSE). If you run a modified version of Catwalk as a network service, you must offer its source to your users.
