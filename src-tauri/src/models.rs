@@ -276,3 +276,110 @@ pub async fn save_thumbnail(
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Decoded-geometry cache
+//
+// The frontend worker parses a model into plain mesh buffers (positions /
+// normals / colors / index), serializes them to a compact `CWD1` blob, and
+// hands it here to persist. On a later load the blob is read back and wrapped in
+// THREE objects directly, skipping the file read + parse entirely. Like
+// thumbnails, entries are content-addressed by the model's byte hash so
+// identical files share one cache file and a changed file misses naturally.
+// ---------------------------------------------------------------------------
+
+/// Magic header every serialized decode blob starts with (see decodeCache.ts).
+const DECODE_MAGIC: [u8; 4] = *b"CWD1";
+
+/// Resolve a model id to its sanitized, content-addressed cache key. Prefers the
+/// byte hash (so identical files share an entry); falls back to the model id.
+/// Both are already safe (hex / UUID), but we filter to `[A-Za-z0-9-]` as
+/// defense-in-depth so a poisoned value can never escape the cache dir.
+async fn decode_cache_key(state: &AppState, model_id: &str) -> AppResult<String> {
+    // `fetch_optional` of a nullable column gives `Option<Option<String>>`:
+    //   None        -> no such model (NotFound)
+    //   Some(None)  -> model exists, no hash yet -> fall back to the model id
+    //   Some(Some)  -> use the byte hash
+    let row: Option<Option<String>> = {
+        let db = state.db.lock().await;
+        sqlx::query_scalar("SELECT byte_hash FROM models WHERE id = ?")
+            .bind(model_id)
+            .fetch_optional(&db.pool)
+            .await?
+    };
+    let raw_key = row
+        .ok_or(crate::error::AppError::NotFound)?
+        .unwrap_or_else(|| model_id.to_string());
+    sanitize_key(&raw_key)
+}
+
+/// Filter a cache key to `[A-Za-z0-9-]`, erroring if nothing usable remains.
+fn sanitize_key(raw: &str) -> AppResult<String> {
+    let key: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    if key.is_empty() {
+        return Err(crate::error::AppError::InvalidInput(
+            "Unusable decode cache key".into(),
+        ));
+    }
+    Ok(key)
+}
+
+/// Read a model's cached decode blob, or `NotFound` if none is cached yet.
+#[tauri::command]
+pub async fn read_cached_decode(
+    state: State<'_, AppState>,
+    model_id: String,
+) -> AppResult<tauri::ipc::Response> {
+    let key = decode_cache_key(&state, &model_id).await?;
+    let path = state.decode_dir.join(format!("{key}.bin"));
+    if !path.exists() {
+        return Err(crate::error::AppError::NotFound);
+    }
+    // Confine reads to the decode cache directory.
+    let cache_canon = state
+        .decode_dir
+        .canonicalize()
+        .map_err(|_| crate::error::AppError::NotFound)?;
+    let target_canon = path
+        .canonicalize()
+        .map_err(|_| crate::error::AppError::NotFound)?;
+    if !target_canon.starts_with(&cache_canon) {
+        return Err(crate::error::AppError::InvalidInput(
+            "Decode path escapes the cache directory".into(),
+        ));
+    }
+    Ok(tauri::ipc::Response::new(std::fs::read(&target_canon)?))
+}
+
+/// Report whether a model already has a cached decode (cheap stat, no read).
+/// Used by the background warmer to skip already-decoded models.
+#[tauri::command]
+pub async fn has_cached_decode(
+    state: State<'_, AppState>,
+    model_id: String,
+) -> AppResult<bool> {
+    let key = decode_cache_key(&state, &model_id).await?;
+    Ok(state.decode_dir.join(format!("{key}.bin")).is_file())
+}
+
+/// Persist a decode blob produced by the frontend worker. Validates the `CWD1`
+/// magic before writing so only well-formed blobs reach the cache.
+#[tauri::command]
+pub async fn save_cached_decode(
+    state: State<'_, AppState>,
+    model_id: String,
+    data: Vec<u8>,
+) -> AppResult<()> {
+    if data.len() < 4 || data[..4] != DECODE_MAGIC {
+        return Err(crate::error::AppError::InvalidInput(
+            "Decode blob has a bad magic header".into(),
+        ));
+    }
+    let key = decode_cache_key(&state, &model_id).await?;
+    let dest = state.decode_dir.join(format!("{key}.bin"));
+    std::fs::write(&dest, &data)?;
+    Ok(())
+}

@@ -1,24 +1,25 @@
 import { invoke } from "@tauri-apps/api/core";
 import type * as THREE from "three";
 import { parseModel, finalizeObject, disposeObject } from "./loadModel";
-import { assemble3mf } from "./assemble3mf";
+import { assembleMeshes } from "./assembleMeshes";
 import type { Parse3mfResult } from "./parse3mfCore";
+import { readCachedDecode, saveCachedDecode, hasCachedDecode } from "./decodeCache";
 
 /**
- * Async preview loader sitting between the viewer and the synchronous parser.
+ * Async preview loader sitting between the viewer and the parser.
  *
  * Goals:
- *  - Keep clicking a model from feeling dead: we yield to the event loop before
- *    the parse so the viewer's spinner paints first.
+ *  - Keep clicking a model from feeling dead: parsing runs in a Web Worker so
+ *    the main thread (and the viewer's spinner) stays responsive.
  *  - Make revisiting a model instant via a small LRU cache of parsed objects.
  *  - Let callers prefetch on selection so the parse overlaps the metadata fetch.
  *
- * 3MF parsing (the worst offender — a 2-3s main-thread freeze on big painted
- * files) runs in a Web Worker via parse3mfCore.ts; the main thread only wraps
- * the returned typed-array geometry in THREE objects. Files using feature paths
- * the worker doesn't fast-path (textures/basematerials/colorgroups/implicit)
- * fall back to the full main-thread ThreeMFLoader, so nothing regresses. STL/OBJ
- * still parse on the main thread (cheap; could move to a worker later).
+ * All three formats (STL/OBJ via the stock THREE loaders, 3MF via the THREE-free
+ * parse3mfCore) parse in the worker, which returns plain typed-array geometry;
+ * the main thread only wraps it in THREE objects (assembleMeshes). A 3MF that
+ * uses a feature path the worker doesn't fast-path (textures/implicit) returns
+ * { supported:false } and falls back to the full main-thread ThreeMFLoader, so
+ * nothing regresses. Any worker failure also falls back to the main thread.
  */
 
 export type Preview = {
@@ -57,11 +58,13 @@ function store(id: string, entry: Preview): void {
   }
 }
 
-// --- 3MF parse worker -------------------------------------------------------
-// A single shared module worker handles all 3MF parses. Requests are keyed by a
-// monotonic id so concurrent loads don't cross wires. We deliberately do NOT
-// transfer the input buffer (structured-clone copies it) so the main thread
-// keeps its own copy for the fallback path.
+// --- parse worker -----------------------------------------------------------
+// A single shared module worker parses every previewable format. Requests are
+// keyed by a monotonic id so concurrent loads don't cross wires. We deliberately
+// do NOT transfer the input buffer (structured-clone copies it) so the main
+// thread keeps its own copy for the fallback path.
+
+const WORKER_EXTS = new Set(["stl", "obj", "3mf"]);
 
 type WorkerResponse =
   | { id: number; ok: true; result: Parse3mfResult }
@@ -76,7 +79,7 @@ const pending = new Map<
 
 function getWorker(): Worker {
   if (!worker) {
-    worker = new Worker(new URL("./parse3mf.worker.ts", import.meta.url), {
+    worker = new Worker(new URL("./parseModel.worker.ts", import.meta.url), {
       type: "module",
     });
     worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
@@ -93,7 +96,7 @@ function getWorker(): Worker {
       // every outstanding request so callers fall back to the main thread
       // rather than hang forever. The instance is now suspect, so tear it down;
       // the next request spawns a fresh worker via getWorker().
-      const err = new Error(e.message || "3mf worker error");
+      const err = new Error(e.message || "parse worker error");
       for (const req of pending.values()) req.reject(err);
       pending.clear();
       worker?.terminate();
@@ -103,43 +106,100 @@ function getWorker(): Worker {
   return worker;
 }
 
-function parse3mfInWorker(buffer: ArrayBuffer): Promise<Parse3mfResult> {
+function parseInWorker(ext: string, buffer: ArrayBuffer): Promise<Parse3mfResult> {
   const w = getWorker();
   const id = nextReqId++;
   return new Promise<Parse3mfResult>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    w.postMessage({ id, buffer });
+    w.postMessage({ id, ext, buffer });
   });
 }
 
+/** Wrap worker/cache mesh buffers in a centered, upright THREE pivot. Cheap. */
+function buildFromMeshes(meshes: Parse3mfResult["meshes"], ext: string): Preview {
+  return finalizeObject(assembleMeshes(meshes), ext);
+}
+
 async function doLoad(id: string, ext: string): Promise<Preview> {
+  // L2 disk cache: a hit skips both the file read and the parse — we only do the
+  // cheap assemble/center step. (The cheap step re-runs each load rather than
+  // baking a transform into the cache, keeping the artifact format-correct.)
+  if (WORKER_EXTS.has(ext)) {
+    const cached = await readCachedDecode(id);
+    if (cached) return buildFromMeshes(cached, ext);
+  }
+
   // Raw bytes come back as an ArrayBuffer (the command returns a tauri Response).
   const buffer = await invoke<ArrayBuffer>("read_model_file", { modelId: id });
 
-  if (ext === "3mf") {
+  if (WORKER_EXTS.has(ext)) {
     try {
-      const result = await parse3mfInWorker(buffer);
+      const result = await parseInWorker(ext, buffer);
       if (result.supported) {
+        // Persist for next time (best-effort) before we hand ownership of the
+        // buffers to THREE — serialization only reads them, so order is safe.
+        saveCachedDecode(id, result.meshes);
         // Worker did the heavy parse off-thread; we only wrap typed arrays.
-        const group = assemble3mf(result.meshes);
-        return finalizeObject(group, "3mf");
+        return buildFromMeshes(result.meshes, ext);
       }
-      // Feature path the worker can't fast-path — fall through to the full
+      // 3MF feature path the worker can't fast-path — fall through to the full
       // main-thread loader below, which understands it.
     } catch (e) {
-      console.warn("[previewLoader] 3mf worker failed, using main thread", e);
+      console.warn(`[previewLoader] ${ext} worker failed, using main thread`, e);
     }
   }
 
-  // Main-thread parse (STL/OBJ always; 3MF only on worker miss/fallback).
+  // Main-thread parse (only on worker miss/fallback, or an unknown extension).
   // Yield a macrotask so a caller that flipped its loading flag can paint the
   // spinner before this synchronous parse seizes the main thread.
   await new Promise((resolve) => setTimeout(resolve, 0));
   return parseModel(buffer, ext);
 }
 
+// --- Background warming ------------------------------------------------------
+// Timestamp of the last user-initiated load, so the warmer can yield to active
+// browsing (see warmer.ts). loadPreview updates it on every call.
+
+let lastUserLoadAt = 0;
+
+/** Milliseconds since the last user-initiated preview load. */
+export function msSinceUserLoad(): number {
+  return Date.now() - lastUserLoadAt;
+}
+
+/**
+ * Decode a model purely to populate the disk cache (no LRU, no THREE objects).
+ * Returns true if a cache entry now exists (already cached, or freshly written).
+ * Used by the background warmer; reuses the same shared parse worker.
+ */
+export async function decodeForCache(id: string, ext: string): Promise<boolean> {
+  if (!WORKER_EXTS.has(ext)) return false;
+  if (await hasCachedDecode(id)) return true;
+
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await invoke<ArrayBuffer>("read_model_file", { modelId: id });
+  } catch {
+    return false;
+  }
+
+  try {
+    const result = await parseInWorker(ext, buffer);
+    if (result.supported) {
+      saveCachedDecode(id, result.meshes);
+      return true;
+    }
+    // Unsupported feature path (textures/implicit): leave it for the main-thread
+    // fallback at view time — we deliberately don't cache those.
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /** Load (or return a cached) parsed preview for a model. */
 export function loadPreview(id: string, ext: string): Promise<Preview> {
+  lastUserLoadAt = Date.now(); // tell the warmer to yield to active browsing
   const cached = touch(id);
   if (cached) return Promise.resolve(cached);
 

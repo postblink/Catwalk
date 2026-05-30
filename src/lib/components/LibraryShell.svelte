@@ -16,6 +16,7 @@
   import DetailPane from "./DetailPane.svelte";
   import { tagHex } from "./TagChip.svelte";
   import { prefetchPreview } from "$lib/three/previewLoader";
+  import { warmLibrary, stopWarming } from "$lib/three/warmer";
 
   // Formats the interactive viewer can parse — mirrors DetailPane's gate.
   const PREVIEWABLE = new Set(["stl", "obj", "3mf"]);
@@ -69,6 +70,22 @@
       if (seq === loadSeq) models = [];
     } finally {
       if (seq === loadSeq) loadingModels = false;
+    }
+  }
+
+  // Queue the *whole* library (ignoring the current search/tag filter) for
+  // background decode-to-disk, so every model — not just the filtered view —
+  // ends up cached. Cheap to re-run: already-cached models are skipped.
+  async function warmActiveLibrary(libraryId: string) {
+    try {
+      const rows = await invoke<ModelRow[]>("list_models", {
+        libraryId,
+        tagId: null,
+        query: null,
+      });
+      warmLibrary(rows.map((m) => ({ id: m.id, ext: m.extension })));
+    } catch (e) {
+      console.error("failed to queue library for warming", e);
     }
   }
 
@@ -186,7 +203,10 @@
     } finally {
       scanning = false;
       progress = null;
-      await Promise.all([loadModels(active.id), loadTags(active.id)]);
+      const scanned = active;
+      await Promise.all([loadModels(scanned.id), loadTags(scanned.id)]);
+      // Auto-warm the decode cache in the background now that the scan settled.
+      warmActiveLibrary(scanned.id);
     }
   }
 
@@ -201,6 +221,7 @@
       selectedIds = [];
       selectedTagId = null;
       searchQuery = "";
+      stopWarming(); // drop the previous library's warm queue
       loadModels(lib.id);
       loadTags(lib.id);
     });
@@ -220,6 +241,7 @@
       unlistenProgress?.();
       unlistenComplete?.();
       if (searchTimer) clearTimeout(searchTimer);
+      stopWarming();
     };
   });
 

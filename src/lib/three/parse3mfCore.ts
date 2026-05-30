@@ -5,13 +5,13 @@
 // streaming XML parser, and emits plain typed-array geometry buffers that the
 // main thread cheaply wraps in THREE objects.
 //
-// Scope (Phase 1): meshes that are either (a) painted with a filament/extruder
-// palette (Bambu `paint_color` / Prusa `slic3rpe:mmu_segmentation`), or (b)
-// plain geometry with no per-triangle material resources. Anything using
-// basematerials / colorgroups / texture2dgroups / implicit functions returns
-// `{ supported: false }`, so the caller falls back to the full main-thread
-// loader. Correctness is never sacrificed — we only fast-path what we fully
-// understand.
+// Scope: meshes that are (a) painted with a filament/extruder palette (Bambu
+// `paint_color` / Prusa `slic3rpe:mmu_segmentation`), (b) plain geometry, (c)
+// colored by a `<m:colorgroup>` (per-vertex) or `<basematerials>` (per-triangle
+// solid color). Textured meshes (`<m:texture2dgroup>`) and implicit functions
+// return `{ supported: false }`, so the caller falls back to the full
+// main-thread loader. Correctness is never sacrificed — we only fast-path what
+// we fully understand.
 
 // @ts-ignore - three's bundled fflate ships no type declarations
 import { unzipSync } from "three/examples/jsm/libs/fflate.module.js";
@@ -44,11 +44,21 @@ export interface Parse3mfResult {
 
 const isEl = (n: TNode | string): n is TNode => typeof n !== "string";
 
-/** Direct element children with a given (case-insensitive) tag name. */
+/**
+ * Local (namespace-stripped), lower-cased tag name. 3MF uses prefixes for the
+ * material extension (e.g. `m:colorgroup`, `m:color`), so we match on the local
+ * name to stay namespace-agnostic. `tag` arguments are always local + lower.
+ */
+function localName(tagName: string): string {
+  const i = tagName.indexOf(":");
+  return (i >= 0 ? tagName.slice(i + 1) : tagName).toLowerCase();
+}
+
+/** Direct element children with a given (namespace-stripped) tag name. */
 function childrenByTag(node: TNode, tag: string): TNode[] {
   const out: TNode[] = [];
   for (const c of node.children) {
-    if (isEl(c) && c.tagName.toLowerCase() === tag) out.push(c);
+    if (isEl(c) && localName(c.tagName) === tag) out.push(c);
   }
   return out;
 }
@@ -56,7 +66,7 @@ function childrenByTag(node: TNode, tag: string): TNode[] {
 /** First direct element child with a given tag name, or null. */
 function firstByTag(node: TNode, tag: string): TNode | null {
   for (const c of node.children) {
-    if (isEl(c) && c.tagName.toLowerCase() === tag) return c;
+    if (isEl(c) && localName(c.tagName) === tag) return c;
   }
   return null;
 }
@@ -65,7 +75,7 @@ function firstByTag(node: TNode, tag: string): TNode | null {
 function findDeep(nodes: (TNode | string)[], tag: string): TNode | null {
   for (const n of nodes) {
     if (!isEl(n)) continue;
-    if (n.tagName.toLowerCase() === tag) return n;
+    if (localName(n.tagName) === tag) return n;
     const inner = findDeep(n.children, tag);
     if (inner) return inner;
   }
@@ -240,6 +250,10 @@ interface TriProp {
   v1: number;
   v2: number;
   v3: number;
+  /** Per-vertex property indices into the triangle's resource group. */
+  p1?: number;
+  p2?: number;
+  p3?: number;
   pid?: string;
   pc?: string; // paint code
 }
@@ -256,14 +270,22 @@ interface MeshData {
 interface ObjectData {
   id: string;
   pid?: string;
+  /** Object-level default property index (used when a triangle omits p1). */
+  pindex?: number;
   mesh?: MeshData;
   components?: { objectId: string; path: string | null; transform: Affine | null }[];
 }
 
 interface ModelPart {
   objects: Map<string, ObjectData>;
-  /** resource ids that map to material/color/texture groups (=> unsupported). */
+  /** resource ids that map to material/color/texture groups. */
   resourceIds: Set<string>;
+  /** colorgroup id -> flat linear-RGB colors (per-index). */
+  colorgroups: Map<string, Float32Array>;
+  /** basematerials id -> flat linear-RGB displaycolors (per material index). */
+  basematerials: Map<string, Float32Array>;
+  /** texture2dgroup ids — meshes using these fall back to the main thread. */
+  textureGroupIds: Set<string>;
   build: { objectId: string; path: string | null; transform: Affine | null }[];
 }
 
@@ -299,6 +321,20 @@ function parseMesh(meshNode: TNode, resourceIds: Set<string>, objectPid: string 
 
     const prop: TriProp = { v1, v2, v3 };
 
+    // Per-vertex property indices into the resource group (optional).
+    if (a.p1 != null) {
+      const p1 = parseInt(a.p1 as string, 10);
+      if (!Number.isNaN(p1)) prop.p1 = p1;
+    }
+    if (a.p2 != null) {
+      const p2 = parseInt(a.p2 as string, 10);
+      if (!Number.isNaN(p2)) prop.p2 = p2;
+    }
+    if (a.p3 != null) {
+      const p3 = parseInt(a.p3 as string, 10);
+      if (!Number.isNaN(p3)) prop.p3 = p3;
+    }
+
     const pid = (a.pid as string) ?? undefined;
     if (pid !== undefined) prop.pid = pid;
 
@@ -328,6 +364,10 @@ function parseObject(objectNode: TNode, resourceIds: Set<string>): ObjectData {
   const id = attrs.id as string;
   const pid = (attrs.pid as string) ?? undefined;
   const data: ObjectData = { id, pid };
+  if (attrs.pindex != null) {
+    const pindex = parseInt(attrs.pindex as string, 10);
+    if (!Number.isNaN(pindex)) data.pindex = pindex;
+  }
 
   const meshNode = firstByTag(objectNode, "mesh");
   if (meshNode) {
@@ -352,21 +392,52 @@ function parseObject(objectNode: TNode, resourceIds: Set<string>): ObjectData {
 
 function parseModelPart(xmlText: string): ModelPart {
   const roots = parseXml(xmlText, { keepComments: false, keepWhitespace: false });
-  const modelNode = roots.find((n): n is TNode => isEl(n) && n.tagName.toLowerCase() === "model");
+  const modelNode = roots.find((n): n is TNode => isEl(n) && localName(n.tagName) === "model");
   if (!modelNode) throw new Error("3MF: no <model> root");
 
   const resourceIds = new Set<string>();
   const objects = new Map<string, ObjectData>();
+  const colorgroups = new Map<string, Float32Array>();
+  const basematerials = new Map<string, Float32Array>();
+  const textureGroupIds = new Set<string>();
 
   const resourcesNode = firstByTag(modelNode, "resources");
   if (resourcesNode) {
-    // Anything that colors/textures triangles by id => not fast-path supported.
-    for (const tag of ["basematerials", "colorgroup", "texture2dgroup"]) {
-      for (const n of childrenByTag(resourcesNode, tag)) {
-        const id = n.attributes.id as string | undefined;
-        if (id !== undefined) resourceIds.add(id);
+    // colorgroup: a palette of <m:color> entries indexed by p1/p2/p3.
+    for (const n of childrenByTag(resourcesNode, "colorgroup")) {
+      const id = n.attributes.id as string | undefined;
+      if (id === undefined) continue;
+      resourceIds.add(id);
+      const cols: number[] = [];
+      for (const c of childrenByTag(n, "color")) {
+        const lin = hexToLinear(String(c.attributes.color ?? "").substring(0, 7));
+        cols.push(lin?.[0] ?? 0, lin?.[1] ?? 0, lin?.[2] ?? 0);
       }
+      colorgroups.set(id, new Float32Array(cols));
     }
+
+    // basematerials: <base displaycolor> entries indexed by p1 (implicit order).
+    for (const n of childrenByTag(resourcesNode, "basematerials")) {
+      const id = n.attributes.id as string | undefined;
+      if (id === undefined) continue;
+      resourceIds.add(id);
+      const cols: number[] = [];
+      for (const b of childrenByTag(n, "base")) {
+        const lin = hexToLinear(String(b.attributes.displaycolor ?? "").substring(0, 7));
+        cols.push(lin?.[0] ?? 0, lin?.[1] ?? 0, lin?.[2] ?? 0);
+      }
+      basematerials.set(id, new Float32Array(cols));
+    }
+
+    // texture2dgroup: recorded so meshes that use one fall back (textures stay
+    // on the main-thread loader — see parse3mf's emit()).
+    for (const n of childrenByTag(resourcesNode, "texture2dgroup")) {
+      const id = n.attributes.id as string | undefined;
+      if (id === undefined) continue;
+      resourceIds.add(id);
+      textureGroupIds.add(id);
+    }
+
     if (firstByTag(resourcesNode, "implicitfunction")) {
       throw new UnsupportedError("implicit functions");
     }
@@ -390,7 +461,7 @@ function parseModelPart(xmlText: string): ModelPart {
     }
   }
 
-  return { objects, resourceIds, build };
+  return { objects, resourceIds, colorgroups, basematerials, textureGroupIds, build };
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +524,76 @@ function buildDefault(mesh: MeshData, worldVerts: Float32Array): MeshBuffers {
   };
 }
 
+/** Push triangle `p`'s three world-space vertices into `out`. */
+function pushTriangle(out: number[], worldVerts: Float32Array, p: TriProp): void {
+  const a = p.v1 * 3, b = p.v2 * 3, c = p.v3 * 3;
+  out.push(
+    worldVerts[a], worldVerts[a + 1], worldVerts[a + 2],
+    worldVerts[b], worldVerts[b + 1], worldVerts[b + 2],
+    worldVerts[c], worldVerts[c + 1], worldVerts[c + 2],
+  );
+}
+
+/**
+ * `<m:colorgroup>` path: each triangle's p1/p2/p3 select a per-vertex color
+ * (p2/p3 default to p1, p1 to the object's pindex), giving smooth/flat vertex
+ * coloring. Mirrors ThreeMFLoader.buildVertexColorMesh.
+ */
+function buildVertexColorGroup(
+  props: TriProp[], worldVerts: Float32Array, colors: Float32Array, objectPindex: number | undefined,
+): MeshBuffers {
+  const positions: number[] = [];
+  const colorData: number[] = [];
+  const n = colors.length / 3;
+  const colorAt = (idx: number | undefined) => {
+    const i = idx !== undefined && idx >= 0 && idx < n ? idx : 0;
+    colorData.push(colors[i * 3] ?? 0, colors[i * 3 + 1] ?? 0, colors[i * 3 + 2] ?? 0);
+  };
+
+  for (const p of props) {
+    pushTriangle(positions, worldVerts, p);
+    const i1 = p.p1 ?? objectPindex;
+    colorAt(i1);
+    colorAt(p.p2 ?? i1);
+    colorAt(p.p3 ?? i1);
+  }
+
+  const pos = new Float32Array(positions);
+  return { kind: "painted", positions: pos, colors: new Float32Array(colorData), normals: computeNormals(pos, null), index: null };
+}
+
+/**
+ * `<basematerials>` path: each triangle's p1 (else the object's pindex) selects
+ * a material whose displaycolor fills all three vertices — a per-triangle solid
+ * color. Alpha on 8-digit displaycolors is ignored (opaque preview).
+ */
+function buildBasematerialGroup(
+  props: TriProp[], worldVerts: Float32Array, baseColors: Float32Array, objectPindex: number | undefined,
+): MeshBuffers {
+  const positions: number[] = [];
+  const colorData: number[] = [];
+  const n = baseColors.length / 3;
+
+  for (const p of props) {
+    pushTriangle(positions, worldVerts, p);
+    const raw = p.p1 ?? objectPindex ?? 0;
+    const i = raw >= 0 && raw < n ? raw : 0;
+    const r = baseColors[i * 3] ?? 0, g = baseColors[i * 3 + 1] ?? 0, b = baseColors[i * 3 + 2] ?? 0;
+    colorData.push(r, g, b, r, g, b, r, g, b);
+  }
+
+  const pos = new Float32Array(positions);
+  return { kind: "painted", positions: pos, colors: new Float32Array(colorData), normals: computeNormals(pos, null), index: null };
+}
+
+/** A subset of triangles with no (recognized) resource: plain purple geometry. */
+function buildDefaultGroup(props: TriProp[], worldVerts: Float32Array): MeshBuffers {
+  const positions: number[] = [];
+  for (const p of props) pushTriangle(positions, worldVerts, p);
+  const pos = new Float32Array(positions);
+  return { kind: "default", positions: pos, colors: null, normals: computeNormals(pos, null), index: null };
+}
+
 // ---------------------------------------------------------------------------
 // Public entry
 // ---------------------------------------------------------------------------
@@ -466,7 +607,7 @@ function fetchRootModelPath(relsText: string): string | null {
   const roots = parseXml(relsText, { keepWhitespace: false });
   const rels = (findDeep(roots, "relationships")?.children ?? roots) as (TNode | string)[];
   for (const n of rels) {
-    if (!isEl(n) || n.tagName.toLowerCase() !== "relationship") continue;
+    if (!isEl(n) || localName(n.tagName) !== "relationship") continue;
     const target = n.attributes.Target as string | undefined;
     if (target && target.split(".").pop()?.toLowerCase() === "model") {
       return target.charAt(0) === "/" ? target.substring(1) : target;
@@ -478,7 +619,8 @@ function fetchRootModelPath(relsText: string): string | null {
 /**
  * Parse a 3MF ArrayBuffer into world-space mesh buffers via the fast path.
  * Returns `{ supported: false }` (rather than throwing) when the file uses
- * features outside Phase 1's scope, so the caller can fall back gracefully.
+ * features outside scope (textures, implicit functions), so the caller can fall
+ * back to the main-thread loader gracefully.
  */
 export function parse3mf(buffer: ArrayBuffer): Parse3mfResult {
   const dec = new TextDecoder();
@@ -519,13 +661,43 @@ export function parse3mf(buffer: ArrayBuffer): Parse3mfResult {
 
       if (obj.mesh) {
         const mesh = obj.mesh;
-        const painted = palette !== null && mesh.hasPaint;
-        if (!painted && mesh.usesResources) {
-          // Plain geometry colored by base materials / colorgroups / textures.
-          throw new UnsupportedError("mesh uses material/color/texture resources");
-        }
         const worldVerts = transformVertices(mesh.vertices, matrix);
-        meshes.push(painted ? buildPainted(mesh, worldVerts, palette!) : buildDefault(mesh, worldVerts));
+
+        // Proprietary paint takes precedence (matches ThreeMFLoader.buildGroup).
+        if (palette !== null && mesh.hasPaint) {
+          meshes.push(buildPainted(mesh, worldVerts, palette));
+          return;
+        }
+        // Plain geometry, no per-triangle resources.
+        if (!mesh.usesResources) {
+          meshes.push(buildDefault(mesh, worldVerts));
+          return;
+        }
+
+        // Resource path: group triangles by effective pid (triangle pid, else
+        // object pid, else "default"), then build per group — mirroring
+        // ThreeMFLoader.analyzeObject + buildMeshes.
+        const groups = new Map<string, TriProp[]>();
+        for (const p of mesh.props) {
+          const pid = p.pid ?? obj.pid ?? "default";
+          let arr = groups.get(pid);
+          if (!arr) groups.set(pid, (arr = []));
+          arr.push(p);
+        }
+        for (const [pid, props] of groups) {
+          const colors = part.colorgroups.get(pid);
+          const bases = part.basematerials.get(pid);
+          if (colors) {
+            meshes.push(buildVertexColorGroup(props, worldVerts, colors, obj.pindex));
+          } else if (bases) {
+            meshes.push(buildBasematerialGroup(props, worldVerts, bases, obj.pindex));
+          } else if (part.textureGroupIds.has(pid)) {
+            // Textured meshes stay on the main-thread loader.
+            throw new UnsupportedError("textured mesh");
+          } else {
+            meshes.push(buildDefaultGroup(props, worldVerts));
+          }
+        }
         return;
       }
 
