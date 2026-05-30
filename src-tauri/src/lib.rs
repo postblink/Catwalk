@@ -19,6 +19,9 @@ pub struct AppState {
     pub db: Arc<Mutex<db::Db>>,
     /// Content-addressed cache for extracted/rendered thumbnails.
     pub thumb_dir: PathBuf,
+    /// Content-addressed cache for decoded geometry (the worker's parsed mesh
+    /// buffers, serialized) so previews survive restarts without re-parsing.
+    pub decode_dir: PathBuf,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -43,6 +46,8 @@ pub fn run() {
             let db_path = app_data_dir.join("catwalk.db");
             let thumb_dir = app_data_dir.join("thumbnails");
             std::fs::create_dir_all(&thumb_dir).ok();
+            let decode_dir = app_data_dir.join("decodes");
+            std::fs::create_dir_all(&decode_dir).ok();
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -56,6 +61,7 @@ pub fn run() {
                         handle.manage(AppState {
                             db: Arc::new(Mutex::new(db)),
                             thumb_dir,
+                            decode_dir,
                         });
                         tracing::info!("database ready at {:?}", db_path);
                     }
@@ -76,6 +82,9 @@ pub fn run() {
             models::read_model_file,
             models::read_thumbnail,
             models::save_thumbnail,
+            models::read_cached_decode,
+            models::save_cached_decode,
+            models::has_cached_decode,
             models::get_model_metadata,
             tags::list_tags,
             tags::list_model_tags,
