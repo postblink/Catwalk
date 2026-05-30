@@ -15,7 +15,11 @@
 
 // @ts-ignore - three's bundled fflate ships no type declarations
 import { unzipSync } from "three/examples/jsm/libs/fflate.module.js";
-import { parse as parseXml, type TNode } from "txml";
+// Import the parser-only subpath (`txml/txml`), not the package root: the root
+// (`txml`) re-exports a Transform stream that pulls in `node:stream`, which the
+// production/worker bundle can't resolve for the browser (the build fails). The
+// subpath is the same parser with zero Node built-in imports.
+import { parse as parseXml, type TNode } from "txml/txml";
 import { decodePaintedTriangle } from "./paint3mf";
 
 export type MeshKind = "painted" | "default";
