@@ -12,7 +12,19 @@
   let radius = $state(1);
   let loading = $state(false);
   let error = $state<string | null>(null);
+  let fallbackUrl = $state<string | null>(null);
   let wireframe = $state(false);
+
+  // When interactive parsing fails (e.g. a 3MF feature even the patched loader
+  // can't handle), fall back to the embedded preview image if one was extracted.
+  async function loadFallbackThumbnail(id: string): Promise<string | null> {
+    try {
+      const buf = await invoke<ArrayBuffer>("read_thumbnail", { modelId: id });
+      return URL.createObjectURL(new Blob([buf], { type: "image/png" }));
+    } catch {
+      return null;
+    }
+  }
 
   async function load(id: string, ext: string) {
     loading = true;
@@ -26,6 +38,7 @@
       object = result.object;
     } catch (e) {
       error = String(e);
+      fallbackUrl = await loadFallbackThumbnail(id);
     } finally {
       loading = false;
     }
@@ -33,11 +46,22 @@
 
   $effect(() => {
     if (modelId) load(modelId, extension);
+    return () => {
+      if (fallbackUrl) URL.revokeObjectURL(fallbackUrl);
+      fallbackUrl = null;
+    };
   });
 </script>
 
 <div class="relative h-full w-full bg-surface">
-  {#if error}
+  {#if error && fallbackUrl}
+    <div class="flex h-full flex-col items-center justify-center gap-2 bg-surface">
+      <img src={fallbackUrl} alt="Embedded preview" class="h-full w-full object-contain p-4" />
+      <p class="absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-surface-raised/90 px-2 py-1 text-xs text-muted">
+        Embedded preview (interactive view unavailable)
+      </p>
+    </div>
+  {:else if error}
     <div class="flex h-full flex-col items-center justify-center gap-2 text-muted">
       <AlertTriangle size={28} class="text-warning" />
       <p class="max-w-xs text-center text-sm">{error}</p>

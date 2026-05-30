@@ -17,7 +17,9 @@
     onTagsChanged?: (() => void) | null;
   } = $props();
 
-  const previewable = $derived(model.extension === "stl" || model.extension === "obj");
+  const previewable = $derived(
+    model.extension === "stl" || model.extension === "obj" || model.extension === "3mf",
+  );
 
   let meta = $state<ModelMetadata | null>(null);
 
