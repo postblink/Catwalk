@@ -48,6 +48,30 @@ function normalize3mfMeshes(root: THREE.Object3D): void {
 }
 
 /**
+ * Wrap a parsed Object3D in a pivot, reorient Z-up→Y-up for STL/3MF, and
+ * recenter it on its bounding-sphere center. Shared by the synchronous
+ * {@link parseModel} path and the worker-assembled 3MF path so framing and
+ * orientation stay identical regardless of where the geometry was built.
+ */
+export function finalizeObject(parsed: THREE.Object3D, ext: string): LoadedModel {
+  // Wrap in a pivot so we can reorient + recenter cleanly.
+  const pivot = new THREE.Group();
+  pivot.add(parsed);
+  // STL and 3MF are authored Z-up for printing; convert to three.js Y-up so
+  // models stand upright. (OBJ is already Y-up.)
+  if (ext === "stl" || ext === "3mf") pivot.rotation.x = -Math.PI / 2;
+  pivot.updateMatrixWorld(true);
+
+  const box = new THREE.Box3().setFromObject(pivot);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  // Shift so the bounding sphere center sits at the origin.
+  pivot.position.sub(sphere.center);
+  pivot.updateMatrixWorld(true);
+
+  return { object: pivot, radius: sphere.radius || 1 };
+}
+
+/**
  * Parse STL/OBJ/3MF bytes into a centered, upright Object3D plus its framing
  * radius. Shared by the interactive viewer and the offscreen thumbnailer so the
  * camera framing and Z-up→Y-up correction stay identical.
@@ -73,21 +97,7 @@ export function parseModel(buffer: ArrayBuffer, ext: string): LoadedModel {
     throw new Error(`Preview not supported for .${ext}`);
   }
 
-  // Wrap in a pivot so we can reorient + recenter cleanly.
-  const pivot = new THREE.Group();
-  pivot.add(parsed);
-  // STL and 3MF are authored Z-up for printing; convert to three.js Y-up so
-  // models stand upright. (OBJ is already Y-up.)
-  if (ext === "stl" || ext === "3mf") pivot.rotation.x = -Math.PI / 2;
-  pivot.updateMatrixWorld(true);
-
-  const box = new THREE.Box3().setFromObject(pivot);
-  const sphere = box.getBoundingSphere(new THREE.Sphere());
-  // Shift so the bounding sphere center sits at the origin.
-  pivot.position.sub(sphere.center);
-  pivot.updateMatrixWorld(true);
-
-  return { object: pivot, radius: sphere.radius || 1 };
+  return finalizeObject(parsed, ext);
 }
 
 /** Recursively dispose all geometries/materials under an object. */
