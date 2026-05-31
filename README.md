@@ -4,6 +4,10 @@ An open-source, cross-platform organizer for 3D-printing model files. Point it a
 
 Built with Tauri 2, SvelteKit, Svelte 5, Threlte, and Rust.
 
+<!-- TODO(screenshot): add a grid + viewer screenshot here — one line, e.g.:
+![Catwalk — library grid and 3D viewer](docs/screenshot.png)
+-->
+
 > **Status:** Preview. The core workflow — scan, browse, preview, tag, search — works end to end, and there are unsigned preview builds on the [releases page](../../releases). Expect rough edges and the occasional breaking change on the way to 1.0.
 
 ## Why
@@ -28,6 +32,30 @@ Model files pile up — across drives, downloads, and slicer exports — and the
 | 3MF | yes | Bambu / Orca / Prusa / Cura | embedded | yes (multicolor) |
 | G-code | yes | planned | planned | planned |
 | STEP / STP | planned | — | — | planned |
+
+## Installing the preview
+
+Grab the installer for your platform from the [releases page](../../releases). Preview builds are **unsigned**, so your OS will warn you the first time — that's expected, not a sign anything's wrong. Here's how to get past it:
+
+**macOS** — open the `.dmg` (`aarch64` for Apple Silicon, `x64` for Intel) and drag Catwalk to Applications. On first launch, right-click the app and choose **Open → Open** to bypass Gatekeeper. If it still refuses, clear the quarantine flag:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Catwalk.app
+```
+
+**Windows** — run the `.exe` (or `.msi`). SmartScreen may show "Windows protected your PC"; click **More info → Run anyway**.
+
+**Linux** — use the package for your distro:
+
+```sh
+chmod +x Catwalk_*.AppImage && ./Catwalk_*.AppImage   # AppImage (any distro)
+sudo apt install ./Catwalk_*.deb                       # Debian / Ubuntu
+sudo dnf install ./Catwalk-*.rpm                        # Fedora / RHEL
+```
+
+## Feedback
+
+This is an early preview — bug reports and ideas are very welcome. If something breaks or feels off, please [open an issue](../../issues) and include your OS and what you were doing.
 
 ## Development
 

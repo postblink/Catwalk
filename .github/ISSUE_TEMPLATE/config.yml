@@ -1,0 +1,6 @@
+# Blank issues stay enabled so quick reports aren't forced into the bug form.
+blank_issues_enabled: true
+contact_links:
+  - name: Ideas & feature requests
+    url: https://github.com/postblink/Catwalk/discussions
+    about: Suggestions, feedback, and "wouldn't it be nice if…" go here.
