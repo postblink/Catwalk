@@ -11,6 +11,11 @@ pub struct Library {
     pub name: String,
     pub root_path: String,
     pub created_at: String,
+    /// Whether `root_path` is still a readable directory. The path is only
+    /// validated when a library is CREATED, so a folder that is later moved,
+    /// renamed, or left on an unplugged drive would otherwise surface as a
+    /// per-model "not found" on every click rather than one clear explanation.
+    pub root_exists: bool,
 }
 
 #[tauri::command]
@@ -25,6 +30,7 @@ pub async fn list_libraries(state: State<'_, AppState>) -> AppResult<Vec<Library
     Ok(rows
         .into_iter()
         .map(|(id, name, root_path, created_at)| Library {
+            root_exists: std::path::Path::new(&root_path).is_dir(),
             id,
             name,
             root_path,
@@ -76,6 +82,8 @@ pub async fn create_library(
         name: trimmed_name,
         root_path,
         created_at,
+        // Validated as an existing directory at the top of this function.
+        root_exists: true,
     })
 }
 

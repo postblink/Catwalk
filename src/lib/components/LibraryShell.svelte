@@ -2,7 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { Library, Settings, RefreshCw, Box, Loader, X, Search, Bookmark, BookmarkPlus, Trash2, Tags, Heart } from "lucide-svelte";
+  import { Library, Settings, RefreshCw, Box, Loader, X, Search, Bookmark, BookmarkPlus, Trash2, Tags, Heart, AlertTriangle } from "lucide-svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import type {
     Library as Lib,
@@ -478,6 +478,28 @@
         >
           <X size={14} /> Clear
         </button>
+      </div>
+    {/if}
+
+    <!-- A library whose folder has moved, been renamed, or sits on an unplugged
+         drive fails EVERY model read, because the root is canonicalized before
+         anything else. Say so once, here, instead of letting each click return
+         an unexplained "not found". -->
+    {#if active && active.root_exists === false}
+      <div
+        class="flex items-start gap-3 border-b border-amber-500/30 bg-amber-500/10 px-6 py-3"
+        role="status"
+      >
+        <AlertTriangle size={16} class="mt-0.5 shrink-0 text-amber-400" />
+        <div class="text-sm">
+          <p class="font-medium text-fg">This library's folder isn't where Catwalk left it.</p>
+          <p class="mt-1 text-muted">
+            Nothing can be opened until it's back. Expected it at
+            <code class="rounded bg-surface-overlay px-1 py-0.5 text-xs">{active.root_path}</code>
+            — if the folder moved or lives on a drive that isn't connected, restore it there or
+            reconnect the drive. Your tags and collections are safe either way.
+          </p>
+        </div>
       </div>
     {/if}
 

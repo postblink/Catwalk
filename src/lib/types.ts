@@ -3,6 +3,10 @@ export type Library = {
   name: string;
   root_path: string;
   created_at: string;
+  /** False when root_path is no longer a readable directory (moved, renamed,
+   *  or on an unplugged drive). Every model read fails in that state, so the UI
+   *  explains it once instead of erroring per click. */
+  root_exists: boolean;
 };
 
 export type SlicerCandidate = {
