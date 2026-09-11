@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { Canvas } from "@threlte/core";
   import type * as THREE from "three";
@@ -76,7 +77,23 @@
   }
 
   $effect(() => {
-    if (modelId) load(modelId, extension);
+    // Read the real dependencies, then run the load UNTRACKED.
+    //
+    // load() executes synchronously up to its first await, and that prefix calls
+    // revokeThumb(), which READS thumbUrl as well as writing it. Without untrack
+    // that makes thumbUrl a dependency of an effect that also mutates it, and the
+    // effect re-runs every time a thumbnail lands.
+    //
+    // On the happy path that stayed invisible: loadPreview resolves, `object` is
+    // set, and the thumbnail's own `|| object` guard drops the URL before it is
+    // ever assigned. It only bites when the parse FAILS — the catch deliberately
+    // keeps the thumbnail as a fallback image, so thumbUrl gets set, the effect
+    // re-runs, revokeThumb nulls it, and each pass fires another read_thumbnail
+    // and another loadPreview. A library whose root has moved or whose drive is
+    // unplugged puts every model on that path at once.
+    const id = modelId;
+    const ext = extension;
+    if (id) untrack(() => load(id, ext));
     return () => {
       // Invalidate any in-flight load so it can't write to freed state.
       loadToken++;
