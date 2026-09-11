@@ -19,5 +19,11 @@ src-tauri/.cargo/
 *.swp
 *.swo
 
-# Local-only assistant instructions
+# Local-only assistant instructions. CONTEXT.md is the real file; the rest are
+# symlinks to it so each tool finds its own filename. All local, none published.
 CLAUDE.md
+AGENTS.md
+GEMINI.md
+CONTEXT.md
+.clinerules
+.cursorrules
