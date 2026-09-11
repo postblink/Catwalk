@@ -6,7 +6,7 @@ Built with Tauri 2, SvelteKit, Svelte 5, Threlte, and Rust.
 
 ![Catwalk — the library grid, with tags and smart collections in the sidebar](docs/screenshot.jpg)
 
-> **Status:** Preview. The core workflow — scan, browse, preview, tag, search — works end to end, and there are unsigned preview builds on the [releases page](../../releases). Expect rough edges and the occasional breaking change on the way to 1.0.
+> **Status:** First public release. The core workflow — scan, browse, preview, tag, search — works end to end, and there are builds for macOS, Linux, and Windows on the [releases page](../../releases). The builds are **unsigned**, so macOS and Windows will warn the first time you open one; the release notes explain how to get past it. Early software: expect rough edges, and please report them.
 
 ## Why
 
@@ -33,9 +33,9 @@ Model files pile up — across drives, downloads, and slicer exports — and the
 | G-code | yes | planned | planned | planned |
 | STEP / STP | planned | — | — | planned |
 
-## Installing the preview
+## Installing
 
-Grab the installer for your platform from the [releases page](../../releases). Preview builds are **unsigned**, so your OS will warn you the first time — that's expected, not a sign anything's wrong. Here's how to get past it:
+Grab the installer for your platform from the [releases page](../../releases). Builds are **unsigned**, so your OS will warn you the first time — that's expected, not a sign anything's wrong. Here's how to get past it:
 
 **macOS** — open the `.dmg` (`aarch64` for Apple Silicon, `x64` for Intel) and drag Catwalk to Applications. On first launch, right-click the app and choose **Open → Open** to bypass Gatekeeper. If it still refuses, clear the quarantine flag:
 
@@ -55,7 +55,7 @@ sudo dnf install ./Catwalk-*.rpm                        # Fedora / RHEL
 
 ## Feedback
 
-This is an early preview — bug reports and ideas are very welcome. If something breaks or feels off, please [open an issue](../../issues) and include your OS and what you were doing.
+This is early software — bug reports and ideas are very welcome. If something breaks or feels off, please [open an issue](../../issues) and include your OS and what you were doing.
 
 ## Development
 

@@ -74,9 +74,24 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Catwalk ${{ github.ref_name }}"
-          releaseBody: "Preview build — unsigned. Download the installer for your platform from the assets below."
+          releaseBody: |
+            Download the installer for your platform from the assets below.
+
+            **These builds are unsigned.** Catwalk has no code-signing certificate
+            yet, so your OS will object the first time you open it:
+
+            - **macOS** — Gatekeeper will refuse outright. Right-click the app and
+              choose *Open*, then confirm. You only need to do this once.
+            - **Windows** — SmartScreen shows a blue warning. Click *More info*,
+              then *Run anyway*.
+            - **Linux** — no prompt; the AppImage just needs the execute bit.
+
+            Catwalk never moves, renames, or edits your model files. It reads the
+            folders you point it at and keeps its own index.
+
+            See the README for what it does and how to report problems.
           # Drafted so all four jobs finish uploading before anyone can download a
-          # half-populated release. Flip to a published pre-release in the GitHub UI.
+          # half-populated release. Review the assets, then publish from the UI.
           releaseDraft: true
-          prerelease: true
+          prerelease: false
           args: ${{ matrix.args }}
