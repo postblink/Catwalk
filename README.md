@@ -1,22 +1,22 @@
 # Catwalk
 
-An open-source, cross-platform organizer for 3D-printing model files. Point it at the folders you already have, and it gives you a fast, searchable, taggable library with a real 3D viewer — without touching a single file.
+Organize the 3D-printing model files you already have. Catwalk indexes your folders in place — it never moves, renames, or edits a single file — and gives you a searchable, taggable library with a real 3D viewer.
 
 Built with Tauri 2, SvelteKit, Svelte 5, Threlte, and Rust.
 
 ![Catwalk — the library grid, with tags and smart collections in the sidebar](docs/screenshot.jpg)
 
-> **Status:** First public release. The core workflow — scan, browse, preview, tag, search — works end to end, and there are builds for macOS, Linux, and Windows on the [releases page](../../releases). The builds are **unsigned**, so macOS and Windows will warn the first time you open one; the release notes explain how to get past it. Early software: expect rough edges, and please report them.
+> **Status:** First public release. Scan, browse, preview, tag, and search all work end to end. Unsigned builds for macOS, Linux, and Windows are on the [releases page](../../releases). Because the builds are unsigned, macOS Gatekeeper and Windows SmartScreen will warn you on first launch — the release notes explain how to get past it. This is early software. Bug reports are wanted.
 
 ## Why
 
-Model files pile up — across drives, downloads, and slicer exports — and there's no good way to see what's actually in them. Catwalk reads your existing folders in place, renders every model, and lets you tag and filter until the pile is findable. It never reorganizes anything behind your back.
+Model files accumulate across drives, downloads, and slicer exports. There's no good way to see what's actually inside them without opening each one. Catwalk reads your existing folders where they already are, renders every model, and lets you tag and filter until the pile is findable.
 
 ## What it does
 
-- **Real 3D viewer.** STL, OBJ, and 3MF render in an interactive viewer — orbit, pan, zoom, a wireframe toggle, and a fullscreen popout. 3MF multicolor (painted faces, color groups, base materials) shows up the way your slicer painted it.
-- **Fast by default.** Parsing runs off the main thread in a Web Worker, decoded geometry is cached to disk, and the whole library warms in the background after a scan — so models open instantly, not just the ones you've already clicked.
-- **Smart organization.** Manual tags plus auto-tags inferred from slicer metadata and filenames. Search and tag-filter the grid, save those filters as smart collections, and bulk-tag with multi-select.
+- **Real 3D viewer.** STL, OBJ, and 3MF render in an interactive viewer — orbit, pan, zoom, wireframe toggle, fullscreen popout. 3MF multicolor (painted faces, color groups, base materials) shows up the way your slicer painted it.
+- **Fast by default.** Parsing runs in a Web Worker, decoded geometry is cached to disk, and the library warms in the background after a scan. Models open instantly, not just the ones you've already clicked.
+- **Smart organization.** Manual tags plus auto-tags inferred from slicer metadata and filenames. Search and filter the grid, save filters as smart collections, bulk-tag with multi-select.
 - **Slicer-aware.** 3MF projects from Bambu Studio, OrcaSlicer, PrusaSlicer, and Cura contribute their embedded preview, print time, layer height, and nozzle settings.
 - **Non-destructive.** Catwalk indexes your folders. It never moves, renames, or modifies your files.
 - **Cross-platform.** macOS, Linux, and Windows. No Electron.
@@ -55,7 +55,7 @@ sudo dnf install ./Catwalk-*.rpm                        # Fedora / RHEL
 
 ## Feedback
 
-This is early software — bug reports and ideas are very welcome. If something breaks or feels off, please [open an issue](../../issues) and include your OS and what you were doing.
+This is early software. If something breaks or feels off, please [open an issue](../../issues) and include your OS and what you were doing.
 
 ## Development
 
