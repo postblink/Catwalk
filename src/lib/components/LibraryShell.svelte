@@ -2,7 +2,8 @@
   import { onMount, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-  import { Library, Settings, RefreshCw, Box, Loader, X, Search, Bookmark, BookmarkPlus, Trash2, Tags } from "lucide-svelte";
+  import { Library, Settings, RefreshCw, Box, Loader, X, Search, Bookmark, BookmarkPlus, Trash2, Tags, Heart } from "lucide-svelte";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import type {
     Library as Lib,
     ModelRow,
@@ -17,6 +18,8 @@
   import { tagHex } from "./TagChip.svelte";
   import { prefetchPreview } from "$lib/three/previewLoader";
   import { warmLibrary, stopWarming } from "$lib/three/warmer";
+
+  const SUPPORT_URL = "https://ko-fi.com/postblink";
 
   // Formats the interactive viewer can parse — mirrors DetailPane's gate.
   const PREVIEWABLE = new Set(["stl", "obj", "3mf"]);
@@ -374,6 +377,16 @@
     <div class="border-t border-border p-2">
       <button class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted hover:bg-surface-overlay hover:text-fg">
         <Settings size={14} /> Settings
+      </button>
+      <!-- Catwalk is free and AGPL; this is a tip jar, never a gate. Uses the
+           opener plugin rather than an <a target="_blank"> — in a Tauri webview a
+           plain anchor can navigate the app window away from itself. -->
+      <button
+        class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted hover:bg-surface-overlay hover:text-fg"
+        onclick={() => void openUrl(SUPPORT_URL).catch((err) => console.error("[support] could not open browser:", err))}
+        title="Opens ko-fi.com in your browser"
+      >
+        <Heart size={14} /> Support Catwalk
       </button>
     </div>
   </aside>
