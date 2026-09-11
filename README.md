@@ -21,6 +21,8 @@ Model files pile up — across drives, downloads, and slicer exports — and the
 - **Non-destructive.** Catwalk indexes your folders. It never moves, renames, or modifies your files.
 - **Cross-platform.** macOS, Linux, and Windows. No Electron.
 
+![The viewer open on a painted 3MF, with format, dimensions, triangle count and hashes alongside](docs/viewer.jpg)
+
 ## Formats
 
 | Format | Indexed | Metadata | Thumbnail | 3D preview |
