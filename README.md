@@ -4,9 +4,7 @@ An open-source, cross-platform organizer for 3D-printing model files. Point it a
 
 Built with Tauri 2, SvelteKit, Svelte 5, Threlte, and Rust.
 
-<!-- TODO(screenshot): add a grid + viewer screenshot here — one line, e.g.:
-![Catwalk — library grid and 3D viewer](docs/screenshot.png)
--->
+![Catwalk — the library grid, with tags and smart collections in the sidebar](docs/screenshot.jpg)
 
 > **Status:** Preview. The core workflow — scan, browse, preview, tag, search — works end to end, and there are unsigned preview builds on the [releases page](../../releases). Expect rough edges and the occasional breaking change on the way to 1.0.
 
