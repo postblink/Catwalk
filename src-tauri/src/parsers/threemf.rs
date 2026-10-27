@@ -43,7 +43,12 @@ pub fn parse(path: &Path) -> std::io::Result<ThreeMfData> {
 
     // Snapshot entry names so we can look entries up without fighting the
     // borrow checker over the archive's mutable `by_name`/`by_index`.
-    let names: Vec<String> = zip.file_names().map(|s| s.to_string()).collect();
+    // (zip 9 reports per-entry name errors; entries with undecodable names are skipped.)
+    let names: Vec<String> = zip
+        .file_names()
+        .filter_map(|name| name.ok())
+        .map(|s| s.to_string())
+        .collect();
 
     let mut data = ThreeMfData::default();
 
