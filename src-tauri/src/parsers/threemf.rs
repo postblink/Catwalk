@@ -11,6 +11,7 @@
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 use std::io::Read;
 use std::path::Path;
 
@@ -42,7 +43,12 @@ pub fn parse(path: &Path) -> std::io::Result<ThreeMfData> {
 
     // Snapshot entry names so we can look entries up without fighting the
     // borrow checker over the archive's mutable `by_name`/`by_index`.
-    let names: Vec<String> = zip.file_names().map(|s| s.to_string()).collect();
+    // (zip 9 reports per-entry name errors; entries with undecodable names are skipped.)
+    let names: Vec<String> = zip
+        .file_names()
+        .filter_map(|name| name.ok())
+        .map(|s| s.to_string())
+        .collect();
 
     let mut data = ThreeMfData::default();
 
@@ -233,15 +239,15 @@ fn parse_slice_info(xml: &str, data: &mut ThreeMfData) {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 let tag = e.name();
                 let tag = tag.as_ref();
-                if tag == b"plate" {
+                if tag == "plate" {
                     plate_count += 1;
-                } else if tag == b"metadata" {
+                } else if tag == "metadata" {
                     let (mut key, mut value) = (None, None);
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"key" => key = Some(attr.unescape_value().unwrap_or_default().into_owned()),
-                            b"value" => {
-                                value = Some(attr.unescape_value().unwrap_or_default().into_owned())
+                            "key" => key = Some(attr.normalized_value(XmlVersion::Implicit1_0).unwrap_or_default().into_owned()),
+                            "value" => {
+                                value = Some(attr.normalized_value(XmlVersion::Implicit1_0).unwrap_or_default().into_owned())
                             }
                             _ => {}
                         }
@@ -263,10 +269,10 @@ fn parse_slice_info(xml: &str, data: &mut ThreeMfData) {
                             _ => {}
                         }
                     }
-                } else if tag == b"filament" {
+                } else if tag == "filament" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"type" {
-                            let t = attr.unescape_value().unwrap_or_default().into_owned();
+                        if attr.key.as_ref() == "type" {
+                            let t = attr.normalized_value(XmlVersion::Implicit1_0).unwrap_or_default().into_owned();
                             if !t.is_empty() && !filaments.contains(&t) {
                                 filaments.push(t);
                             }
@@ -361,15 +367,15 @@ fn parse_model_mesh(xml: &str, data: &mut ThreeMfData) {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 match e.name().as_ref() {
-                    b"vertex" => {
+                    "vertex" => {
                         let mut xyz = [0f64; 3];
                         for attr in e.attributes().flatten() {
-                            let val = attr.unescape_value().unwrap_or_default();
+                            let val = attr.normalized_value(XmlVersion::Implicit1_0).unwrap_or_default();
                             let parsed = val.parse::<f64>().ok();
                             match attr.key.as_ref() {
-                                b"x" => xyz[0] = parsed.unwrap_or(0.0),
-                                b"y" => xyz[1] = parsed.unwrap_or(0.0),
-                                b"z" => xyz[2] = parsed.unwrap_or(0.0),
+                                "x" => xyz[0] = parsed.unwrap_or(0.0),
+                                "y" => xyz[1] = parsed.unwrap_or(0.0),
+                                "z" => xyz[2] = parsed.unwrap_or(0.0),
                                 _ => {}
                             }
                         }
@@ -383,7 +389,7 @@ fn parse_model_mesh(xml: &str, data: &mut ThreeMfData) {
                         }
                         saw_vertex = true;
                     }
-                    b"triangle" => triangles += 1,
+                    "triangle" => triangles += 1,
                     _ => {}
                 }
             }
